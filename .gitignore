@@ -50,3 +50,7 @@ node_modules/
 
 # EverOS
 .everos/
+
+# Frontend deploy artifacts
+frontend/*.zip
+frontend/frontend.zip
