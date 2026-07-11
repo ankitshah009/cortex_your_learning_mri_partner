@@ -14,31 +14,15 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
       <Constellation />
 
       <div className="relative mx-auto flex min-h-dvh max-w-6xl flex-col px-6 py-8 md:px-10">
-        {/* Wordmark */}
-        <header className="flex items-center gap-2.5">
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            className="h-7 w-7"
-            fill="none"
-            stroke="url(#cx-mark)"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          >
-            <defs>
-              <linearGradient id="cx-mark" x1="0" y1="0" x2="24" y2="24">
-                <stop offset="0%" stopColor="#5b8cff" />
-                <stop offset="100%" stopColor="#a855f7" />
-              </linearGradient>
-            </defs>
-            <circle cx="6" cy="6" r="2.2" />
-            <circle cx="18" cy="8" r="2.2" />
-            <circle cx="12" cy="18" r="2.2" />
-            <path d="M7.8 7.2 16 8.6M7.3 7.9l3.6 8.2M16.9 10 13 16.1" />
-          </svg>
-          <span className="font-display text-2xl font-extrabold tracking-tight">
-            Cortex
-          </span>
+        {/* Wordmark: the brand lockup, pre-trimmed and sized for the web
+            (cortex-lockup-tight.png is derived from cortex-lockup-transparent.png) */}
+        <header className="flex items-center">
+          <img
+            src="/brand/cortex-lockup-tight.png"
+            alt="Cortex"
+            className="h-10 w-auto select-none"
+            draggable={false}
+          />
         </header>
 
         {/* Hero */}
