@@ -21,7 +21,7 @@ export function makeLiveProvider(analyzeUrl: string): DataProvider {
       try {
         const problem = await mockProvider.getProblem(problemId);
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 12000);
+        const timer = setTimeout(() => ctrl.abort(), 20000);
         const res = await fetch(analyzeUrl, {
           method: "POST",
           headers: { "content-type": "application/json" },
