@@ -2,7 +2,13 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "motion/react";
 import { useApp } from "../state/store";
-import { averageSpeed } from "../scenarios/average-speed";
+import {
+  HOMEWORKS,
+  PROBLEMS,
+  homeworkProgress,
+  firstUnfinished,
+  islandStates,
+} from "../scenarios/homework";
 import { IslandMap } from "../components/brain-map/IslandMap";
 import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
@@ -11,18 +17,29 @@ import { ChunkyButton } from "../components/ui/ChunkyButton";
 const AVATARS = ["🦊", "🐙", "🦖", "🐼"];
 
 export function HomePage() {
-  const { profile, repairedScenarios } = useApp();
+  const { profile, completedProblems } = useApp();
   if (!profile) return <WelcomeScreen />;
 
-  const repaired = repairedScenarios.includes(averageSpeed.id);
+  const islands = islandStates(completedProblems);
+  const anyDone = Object.keys(completedProblems).length > 0;
+  const hw = HOMEWORKS[0];
+  const { done, total } = homeworkProgress(hw, completedProblems);
+  const nextUp = firstUnfinished(hw, completedProblems);
 
-  // Cora's memory book: the EverOS beat. Seeded history plus today's session.
+  // Cora's memory book: the EverOS beat. Seeded history plus today's sessions.
   const memories = [
     { emoji: "🧃", text: "Unit rates: compared juice prices, 2 weeks ago" },
     { emoji: "🍕", text: "Fractions: shared pizza slices, last month" },
-    ...(repaired
-      ? [{ emoji: "⚡", text: "Today: fixed the Speed-Smoothie Mix-up!" }]
-      : []),
+    ...Object.entries(completedProblems).map(([pid, outcome]) => {
+      const p = PROBLEMS[pid];
+      return {
+        emoji: p?.emoji ?? "✨",
+        text:
+          outcome === "repaired"
+            ? `Today: fixed a mix-up on ${p?.title ?? pid}!`
+            : `Today: solid path on ${p?.title ?? pid}!`,
+      };
+    }),
   ];
 
   return (
@@ -49,27 +66,70 @@ export function HomePage() {
       </motion.div>
 
       <div className="relative mt-6">
-        <IslandMap repaired={repaired} />
+        <IslandMap islands={islands} connected={anyDone} />
         <div className="pointer-events-none absolute -bottom-3 left-4 flex items-end gap-1">
-          <Cora expression={repaired ? "celebrating" : "curious"} size={104} />
+          <Cora expression={anyDone ? "celebrating" : "curious"} size={104} />
           <div className="mb-12">
             <SpeechBubble
               text={
-                repaired
-                  ? "Speed Springs is glowing! You fixed a mix-up today! 🌟"
-                  : "I found a wobbly spot on Speed Springs! Want to check it out?"
+                done === total
+                  ? "Homework done and your brain is glowing! 🌟"
+                  : anyDone
+                    ? "Your brain is growing! Ready for the next problem?"
+                    : "I found a wobbly spot on Speed Springs! Your homework can help us fix it!"
               }
             />
           </div>
         </div>
-        <div className="absolute bottom-5 right-5">
-          <Link to="/solve">
-            <ChunkyButton>
-              {repaired ? "Explore it again 🔁" : "Start today's adventure 🚀"}
-            </ChunkyButton>
-          </Link>
-        </div>
       </div>
+
+      {/* Homework: the guided path through real assigned problems */}
+      <section className="mt-10">
+        <h2 className="font-display text-xl font-extrabold">My homework 📚</h2>
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mt-3 flex items-center gap-5 rounded-3xl border-[3px] border-ink/10 bg-white p-5 shadow-[0_5px_0_rgba(63,46,86,0.08)]"
+        >
+          <span className="text-4xl">{hw.emoji}</span>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-lg font-extrabold">{hw.title}</p>
+            <p className="text-sm font-semibold text-ink-soft">
+              {hw.subject} · {hw.due}
+            </p>
+            <div className="mt-2 flex items-center gap-2.5">
+              <div className="h-3.5 max-w-56 flex-1 overflow-hidden rounded-full border-2 border-ink/10 bg-cloud-soft">
+                <div
+                  className="h-full rounded-full bg-teal transition-[width] duration-700"
+                  style={{ width: `${(done / total) * 100}%` }}
+                />
+              </div>
+              <span className="font-display text-sm font-extrabold text-ink-soft">
+                {done}/{total}
+              </span>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col gap-2">
+            {nextUp ? (
+              <Link to={`/solve/${nextUp.id}`}>
+                <ChunkyButton>
+                  {done === 0 ? "Start homework 🚀" : "Keep going ➡️"}
+                </ChunkyButton>
+              </Link>
+            ) : (
+              <span className="rounded-full border-2 border-teal/40 bg-teal-soft px-4 py-2 text-center font-display font-extrabold text-teal-dark">
+                All done! 🏆
+              </span>
+            )}
+            <Link to={`/homework/${hw.id}`} className="text-center">
+              <span className="font-display text-sm font-extrabold text-ink-soft underline decoration-2 underline-offset-2 hover:text-ink">
+                See all problems
+              </span>
+            </Link>
+          </div>
+        </motion.div>
+      </section>
 
       <section className="mt-10">
         <h2 className="font-display text-xl font-extrabold">

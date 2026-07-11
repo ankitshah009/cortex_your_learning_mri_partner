@@ -1,34 +1,8 @@
 import { motion } from "motion/react";
+import type { IslandState } from "../../scenarios/homework";
 
-interface Island {
-  id: string;
-  name: string;
-  emoji: string;
-  x: number;
-  y: number;
-  /** 0..1, drives brightness: how strong this concept region is */
-  mastery: number;
-  wobbly?: boolean;
-}
-
-function islandsFor(repaired: boolean): Island[] {
-  return [
-    {
-      id: "speed",
-      name: "Speed Springs",
-      emoji: "⚡",
-      x: 170,
-      y: 265,
-      mastery: repaired ? 0.95 : 0.45,
-      wobbly: !repaired,
-    },
-    { id: "time", name: "Time Trails", emoji: "⏰", x: 452, y: 150, mastery: 0.8 },
-    { id: "fractions", name: "Fraction Falls", emoji: "🍕", x: 720, y: 275, mastery: 0.62 },
-  ];
-}
-
-function IslandBlob({ island }: { island: Island }) {
-  const glow = island.mastery > 0.9;
+function IslandBlob({ island }: { island: IslandState }) {
+  const glow = island.mastery > 0.88;
   return (
     <g
       transform={`translate(${island.x}, ${island.y})`}
@@ -104,8 +78,14 @@ function IslandBlob({ island }: { island: Island }) {
   );
 }
 
-export function IslandMap({ repaired }: { repaired: boolean }) {
-  const islands = islandsFor(repaired);
+export function IslandMap({
+  islands,
+  connected,
+}: {
+  islands: IslandState[];
+  /** At least one repaired/solid session: the first concept bridge lights up */
+  connected: boolean;
+}) {
   return (
     <div className="relative overflow-hidden rounded-3xl border-[3px] border-ink/10 bg-gradient-to-b from-sky to-[#dff4ff] shadow-[0_6px_0_rgba(63,46,86,0.08)]">
       <svg viewBox="0 0 900 430" className="block w-full">
@@ -126,18 +106,18 @@ export function IslandMap({ repaired }: { repaired: boolean }) {
         </motion.g>
 
         {/* Bridge between Speed Springs and Time Trails: a connection between
-            concepts. Dashed while learning, solid and flowing once repaired. */}
+            concepts. Dashed while learning, solid and flowing once earned. */}
         <path
           d="M255 235 Q330 165 375 165"
           fill="none"
-          stroke={repaired ? "var(--color-teal)" : "var(--color-cloud)"}
+          stroke={connected ? "var(--color-teal)" : "var(--color-cloud)"}
           strokeWidth="7"
           strokeLinecap="round"
-          strokeDasharray={repaired ? "12 6" : "3 14"}
-          className={repaired ? "anim-dash-flow" : undefined}
+          strokeDasharray={connected ? "12 6" : "3 14"}
+          className={connected ? "anim-dash-flow" : undefined}
           style={{ transition: "stroke 1s ease" }}
         />
-        {repaired && (
+        {connected && (
           <g transform="translate(300, 130)">
             <rect
               x="-72"

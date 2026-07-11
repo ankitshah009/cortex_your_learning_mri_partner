@@ -1,6 +1,8 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router-dom";
-import type { Scenario } from "../../scenarios/types";
+import type { Diagnosis, Problem } from "../../scenarios/types";
+import { nextProblemAfter, homeworkForProblem } from "../../scenarios/homework";
+import { useApp } from "../../state/store";
 import { useStage, type Stage } from "../../stages/stageMachine";
 import { ChunkyButton } from "../ui/ChunkyButton";
 import { useCountUp } from "../../lib/useCountUp";
@@ -53,22 +55,30 @@ function ConfidenceMeter({ value, label }: { value: number; label: string }) {
   );
 }
 
-export function ProblemCard({ scenario }: { scenario: Scenario }) {
+export function ProblemCard({ problem }: { problem: Problem }) {
   return (
     <div className="rounded-3xl border-[3px] border-ink/10 bg-white p-5 shadow-[0_5px_0_rgba(63,46,86,0.08)]">
       <p className="font-display text-lg font-extrabold">
-        {scenario.emoji} {scenario.title}
+        {problem.emoji} {problem.title}
       </p>
       <p className="mt-2 text-sm font-semibold leading-relaxed text-ink-soft">
-        {scenario.problem}
+        {problem.statement}
       </p>
     </div>
   );
 }
 
 /** The stage-specific card shown under the problem in the right rail */
-export function StageCard({ scenario }: { scenario: Scenario }) {
+export function StageCard({
+  problem,
+  diagnosis,
+}: {
+  problem: Problem;
+  diagnosis: Diagnosis;
+}) {
   const { stage, probeOutcome, goTo, answerProbe, reset } = useStage();
+  const completed = useApp((s) => s.completedProblems);
+  const mixup = diagnosis.mixup;
 
   return (
     <AnimatePresence mode="wait">
@@ -92,6 +102,7 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
         );
 
       case "mixupFound":
+        if (!mixup) return null;
         return (
           <Card tone="sun">
             <p className="font-display text-lg font-extrabold">
@@ -112,27 +123,28 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
         );
 
       case "hypothesis":
+        if (!mixup) return null;
         return (
           <Card tone="sun">
             <p className="text-xs font-extrabold uppercase tracking-wide text-sun-dark">
               Cora's hunch
             </p>
             <p className="mt-1 font-display text-xl font-extrabold">
-              {scenario.hypothesis.name} 🥤
+              {mixup.hypothesis.name} 🫧
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed">
-              {scenario.hypothesis.kidExplanation}
+              {mixup.hypothesis.kidExplanation}
             </p>
             <div className="mt-3 rounded-2xl border-2 border-lav/40 bg-lav-soft p-3">
               <p className="text-xs font-extrabold text-lav-dark">
                 🧠 Cora remembers...
               </p>
               <p className="mt-1 text-sm font-semibold leading-snug">
-                {scenario.memoryEvidence}
+                {mixup.memoryEvidence}
               </p>
             </div>
             <ConfidenceMeter
-              value={scenario.hypothesis.confidenceBefore}
+              value={mixup.hypothesis.confidenceBefore}
               label="How sure is Cora?"
             />
             <ChunkyButton
@@ -146,16 +158,17 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
         );
 
       case "probing":
+        if (!mixup) return null;
         return (
           <Card tone="lav">
             <p className="text-xs font-extrabold uppercase tracking-wide text-lav-dark">
               Quick experiment
             </p>
             <p className="mt-2 font-display text-lg font-extrabold leading-snug">
-              {scenario.probe.question}
+              {mixup.probe.question}
             </p>
             <div className="mt-4 flex flex-col gap-2.5">
-              {scenario.probe.options.map((opt) => (
+              {mixup.probe.options.map((opt) => (
                 <button
                   key={opt.id}
                   onClick={() => answerProbe(opt.kind)}
@@ -169,6 +182,7 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
         );
 
       case "confirmed": {
+        if (!mixup) return null;
         const gotItRight = probeOutcome === "correct";
         return (
           <Card tone={gotItRight ? "teal" : "sun"}>
@@ -177,14 +191,14 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed">
               {gotItRight
-                ? "You weighted the time correctly this round! So the first answer was probably a slip, not a mix-up. Let's make this idea super solid anyway."
-                : `It's the ${scenario.hypothesis.name}! Your brain averaged the speeds without checking the time. Finding it is the hard part, fixing it is easy!`}
+                ? "You got this one right! So the first answer was probably a slip, not a mix-up. Let's make this idea super solid anyway."
+                : `It's the ${mixup.hypothesis.name}! ${mixup.confirmLine}`}
             </p>
             <ConfidenceMeter
               value={
                 gotItRight
-                  ? scenario.hypothesis.confidenceIfCorrect
-                  : scenario.hypothesis.confidenceAfter
+                  ? mixup.hypothesis.confidenceIfCorrect
+                  : mixup.hypothesis.confidenceAfter
               }
               label="How sure is Cora now?"
             />
@@ -200,13 +214,14 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
       }
 
       case "lesson":
+        if (!mixup) return null;
         return (
           <Card tone="teal">
             <p className="font-display text-lg font-extrabold">
-              {scenario.lesson.title}
+              {mixup.lesson.title}
             </p>
             <ol className="mt-3 flex flex-col gap-2.5">
-              {scenario.lesson.steps.map((step, i) => (
+              {mixup.lesson.steps.map((step, i) => (
                 <motion.li
                   key={i}
                   initial={{ opacity: 0, x: -12 }}
@@ -244,35 +259,52 @@ export function StageCard({ scenario }: { scenario: Scenario }) {
           </Card>
         );
 
-      case "celebrated":
+      case "celebrated": {
+        const next = nextProblemAfter(problem.id, completed);
+        const hw = homeworkForProblem(problem.id);
         return (
           <Card tone="teal">
             <p className="font-display text-2xl font-extrabold leading-tight">
-              {scenario.celebration.headline} 🌱
+              {diagnosis.celebration.headline} 🌱
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed">
-              {scenario.celebration.sub}
+              {diagnosis.celebration.sub}
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full border-2 border-teal/40 bg-white px-3 py-1.5 font-display text-sm font-extrabold text-teal-dark">
                 +1 connection ✨
               </span>
               <span className="rounded-full border-2 border-teal/40 bg-white px-3 py-1.5 font-display text-sm font-extrabold text-teal-dark">
-                1 mix-up repaired 💡
+                {mixup ? "1 mix-up repaired 💡" : "Solid on the first try 💪"}
               </span>
             </div>
             <div className="mt-4 flex flex-col gap-2.5">
-              <Link to="/" className="block">
-                <ChunkyButton variant="teal" className="w-full">
-                  Back to my brain 🧠
-                </ChunkyButton>
-              </Link>
+              {next ? (
+                <Link to={`/solve/${next.id}`} className="block">
+                  <ChunkyButton variant="teal" className="w-full">
+                    Next problem ➡️
+                  </ChunkyButton>
+                </Link>
+              ) : hw ? (
+                <Link to={`/homework/${hw.id}`} className="block">
+                  <ChunkyButton variant="teal" className="w-full">
+                    Finish homework 🎉
+                  </ChunkyButton>
+                </Link>
+              ) : (
+                <Link to="/" className="block">
+                  <ChunkyButton variant="teal" className="w-full">
+                    Back to my brain 🧠
+                  </ChunkyButton>
+                </Link>
+              )}
               <ChunkyButton variant="ghost" className="w-full" onClick={reset}>
                 Replay the scan
               </ChunkyButton>
             </div>
           </Card>
         );
+      }
 
       default:
         return null;

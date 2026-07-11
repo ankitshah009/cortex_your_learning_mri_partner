@@ -1,4 +1,4 @@
-import type { Scenario } from "../scenarios/types";
+import type { Diagnosis, Homework, Problem } from "../scenarios/types";
 
 /**
  * The seam between the UI and the real backend.
@@ -6,10 +6,11 @@ import type { Scenario } from "../scenarios/types";
  * and Butterbase / EverOS adapters can be swapped in without UI changes.
  */
 export interface DataProvider {
+  /** Homework assigned to this student */
+  listHomeworks(): Promise<Homework[]>;
+  getProblem(problemId: string): Promise<Problem>;
   /** Observe + Map + Detect + Hypothesize: reasoning text in, diagnosis out */
-  analyzeReasoning(problemId: string, reasoning: string): Promise<Scenario>;
-  /** EverOS: retrieve memory evidence relevant to a suspected mix-up */
-  getMemoryEvidence(topic: string): Promise<string>;
+  analyzeReasoning(problemId: string, reasoning: string): Promise<Diagnosis>;
   /** EverOS: record the repaired session so the brain map grows */
   recordLearningSession(
     topic: string,

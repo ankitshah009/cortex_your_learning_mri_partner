@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { Completions, Outcome } from "../scenarios/homework";
 
 export interface Profile {
   name: string;
@@ -8,23 +9,22 @@ export interface Profile {
 
 interface AppState {
   profile: Profile | null;
-  repairedScenarios: string[];
+  /** problemId -> how it was finished ("repaired" a mix-up or "solid" first try) */
+  completedProblems: Completions;
   setProfile: (p: Profile) => void;
-  markRepaired: (scenarioId: string) => void;
+  markCompleted: (problemId: string, outcome: Outcome) => void;
 }
 
 export const useApp = create<AppState>()(
   persist(
     (set) => ({
       profile: null,
-      repairedScenarios: [],
+      completedProblems: {},
       setProfile: (profile) => set({ profile }),
-      markRepaired: (id) =>
-        set((s) =>
-          s.repairedScenarios.includes(id)
-            ? {}
-            : { repairedScenarios: [...s.repairedScenarios, id] },
-        ),
+      markCompleted: (problemId, outcome) =>
+        set((s) => ({
+          completedProblems: { ...s.completedProblems, [problemId]: outcome },
+        })),
     }),
     { name: "cortex-app" },
   ),

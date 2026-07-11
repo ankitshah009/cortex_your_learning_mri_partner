@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { motion } from "motion/react";
-import type { Scenario } from "../scenarios/types";
-import { averageSpeed } from "../scenarios/average-speed";
-import { backend } from "../backend/mock";
+import type { Diagnosis, Problem } from "../scenarios/types";
+import { problemPosition } from "../scenarios/homework";
+import { backend } from "../backend";
 import { useStage, STAGES, stageIndex } from "../stages/stageMachine";
 import { useApp } from "../state/store";
 import { PathCanvas } from "../components/thought-path/PathCanvas";
@@ -14,75 +14,105 @@ import { ProblemCard, StageCard } from "../components/panels/StageRail";
 import { coraLine, coraExpression } from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
 
+/** Remounts the scan for every problem so all state starts fresh */
 export function SolvePage() {
+  const { problemId } = useParams<{ problemId: string }>();
+  if (!problemId) return <MissingProblem />;
+  return <SolveScan key={problemId} problemId={problemId} />;
+}
+
+function SolveScan({ problemId }: { problemId: string }) {
   const { stage, probeOutcome, next, prev, goTo, reset } = useStage();
-  const markRepaired = useApp((s) => s.markRepaired);
-  const [scenario, setScenario] = useState<Scenario | null>(null);
-  const [reasoning, setReasoning] = useState(averageSpeed.sampleReasoning);
+  const markCompleted = useApp((s) => s.markCompleted);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [reasoning, setReasoning] = useState("");
   const celebratedRef = useRef(false);
 
-  // Fresh scan whenever the page mounts
+  // Fresh scan per mount; load the problem and pre-fill the reasoning box
   useEffect(() => {
     reset();
+    backend
+      .getProblem(problemId)
+      .then((p) => {
+        setProblem(p);
+        setReasoning(p.sampleReasoning);
+      })
+      .catch(() => setNotFound(true));
     return () => reset();
-  }, [reset]);
+  }, [problemId, reset]);
 
   const submit = useCallback(async () => {
     goTo("reading");
-    const result = await backend.analyzeReasoning(averageSpeed.id, reasoning);
-    setScenario(result);
-  }, [goTo, reasoning]);
+    const result = await backend.analyzeReasoning(problemId, reasoning);
+    setDiagnosis(result);
+  }, [goTo, problemId, reasoning]);
 
-  // Auto-advance the cinematic opening (mapping and scanning play themselves);
-  // everything after mixupFound is advanced by the student.
+  // Auto-advance the cinematic opening. A solid path (no mix-up) skips the
+  // whole diagnosis arc and goes straight to the celebration.
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | undefined;
-    if (stage === "reading" && scenario) {
+    if (stage === "reading" && diagnosis) {
       t = setTimeout(() => goTo("mapping"), 700);
-    } else if (stage === "mapping" && scenario) {
-      t = setTimeout(() => goTo("scanning"), scenario.steps.length * 450 + 1400);
-    } else if (stage === "scanning") {
-      t = setTimeout(() => goTo("mixupFound"), 2100);
+    } else if (stage === "mapping" && diagnosis) {
+      t = setTimeout(() => goTo("scanning"), diagnosis.steps.length * 450 + 1400);
+    } else if (stage === "scanning" && diagnosis) {
+      t = setTimeout(
+        () => goTo(diagnosis.mixup ? "mixupFound" : "celebrated"),
+        2100,
+      );
     } else if (stage === "repairing") {
       t = setTimeout(() => goTo("celebrated"), 2600);
     }
     return () => clearTimeout(t);
-  }, [stage, scenario, goTo]);
+  }, [stage, diagnosis, goTo]);
 
-  // Celebration side effects, fired once per state
+  // Celebration side effects, fired once per completed scan
   useEffect(() => {
+    if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
     if (stage === "celebrated" && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
-      markRepaired(averageSpeed.id);
+      markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
       backend.recordLearningSession(
-        averageSpeed.title,
-        "Found and repaired the Speed-Smoothie Mix-up",
-        95,
+        problem.title,
+        diagnosis.mixup
+          ? `Found and repaired the ${diagnosis.mixup.hypothesis.name}`
+          : "Solid reasoning on the first try",
+        diagnosis.mixup ? 95 : 100,
       );
     }
     if (stage !== "celebrated") celebratedRef.current = false;
-  }, [stage, probeOutcome, markRepaired]);
+  }, [stage, probeOutcome, problem, diagnosis, markCompleted]);
 
   // Presenter keys: arrows drive the demo, r restarts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
-      if (e.key === "ArrowRight" && stage !== "intro" && scenario) next();
+      if (e.key === "ArrowRight" && stage !== "intro" && diagnosis) {
+        // Solid path has no diagnosis arc to step through
+        if (stage === "scanning" && !diagnosis.mixup) goTo("celebrated");
+        else next();
+      }
       if (e.key === "ArrowLeft") prev();
       if (e.key === "r") reset();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stage, scenario, next, prev, reset]);
+  }, [stage, diagnosis, next, prev, goTo, reset]);
+
+  if (notFound) return <MissingProblem />;
+  if (!problem) return null;
 
   return (
     <div className="flex h-dvh flex-col">
-      <TopBar />
+      <TopBar problem={problem} />
       {stage === "intro" ? (
         <IntroLayout
+          problem={problem}
           reasoning={reasoning}
           setReasoning={setReasoning}
           onSubmit={submit}
@@ -90,8 +120,8 @@ export function SolvePage() {
       ) : (
         <div className="flex min-h-0 flex-1">
           <div className="relative min-w-0 flex-1">
-            {scenario ? (
-              <PathCanvas scenario={scenario} />
+            {diagnosis ? (
+              <PathCanvas diagnosis={diagnosis} />
             ) : (
               <ReadingOverlay />
             )}
@@ -99,13 +129,15 @@ export function SolvePage() {
             <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex items-end gap-1">
               <Cora expression={coraExpression(stage)} size={110} />
               <div className="mb-14">
-                <SpeechBubble text={coraLine(stage, probeOutcome)} />
+                <SpeechBubble
+                  text={coraLine(stage, probeOutcome, !!diagnosis?.mixup)}
+                />
               </div>
             </div>
           </div>
           <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l-[3px] border-ink/5 bg-cream p-4">
-            <ProblemCard scenario={averageSpeed} />
-            {scenario && <StageCard scenario={scenario} />}
+            <ProblemCard problem={problem} />
+            {diagnosis && <StageCard problem={problem} diagnosis={diagnosis} />}
           </aside>
         </div>
       )}
@@ -113,18 +145,21 @@ export function SolvePage() {
   );
 }
 
-function TopBar() {
+function TopBar({ problem }: { problem: Problem }) {
   const stage = useStage((s) => s.stage);
+  const pos = problemPosition(problem.id);
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b-[3px] border-ink/5 bg-white px-5">
       <Link
-        to="/"
+        to={pos ? `/homework/${pos.homework.id}` : "/"}
         className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
       >
-        ← My brain
+        ← {pos ? pos.homework.title : "My brain"}
       </Link>
       <span className="font-display text-xl font-extrabold">
-        Brain Scan Adventure 🫧
+        {pos
+          ? `Problem ${pos.index} of ${pos.total} 🫧`
+          : "Brain Scan Adventure 🫧"}
       </span>
       {/* Progress dots: one per stage, filled as the scan advances */}
       <div className="flex items-center gap-1.5">
@@ -142,10 +177,12 @@ function TopBar() {
 }
 
 function IntroLayout({
+  problem,
   reasoning,
   setReasoning,
   onSubmit,
 }: {
+  problem: Problem;
   reasoning: string;
   setReasoning: (v: string) => void;
   onSubmit: () => void;
@@ -166,10 +203,10 @@ function IntroLayout({
         >
           <div className="rounded-3xl border-[3px] border-ink/10 bg-white p-6 shadow-[0_6px_0_rgba(63,46,86,0.08)]">
             <p className="font-display text-2xl font-extrabold">
-              {averageSpeed.emoji} {averageSpeed.title}
+              {problem.emoji} {problem.title}
             </p>
             <p className="mt-3 font-semibold leading-relaxed text-ink-soft">
-              {averageSpeed.problem}
+              {problem.statement}
             </p>
           </div>
           <div className="mt-4 rounded-3xl border-[3px] border-lav/40 bg-lav-soft p-6 shadow-[0_6px_0_rgba(63,46,86,0.08)]">
@@ -216,6 +253,20 @@ function ReadingOverlay() {
           Cora is reading your thinking...
         </motion.p>
       </div>
+    </div>
+  );
+}
+
+function MissingProblem() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 p-6">
+      <Cora expression="thinking" size={130} />
+      <p className="font-display text-2xl font-extrabold">
+        Hmm, I can't find that problem!
+      </p>
+      <Link to="/">
+        <ChunkyButton variant="ghost">Back to my brain 🧠</ChunkyButton>
+      </Link>
     </div>
   );
 }

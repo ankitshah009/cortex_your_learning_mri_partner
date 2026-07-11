@@ -7,7 +7,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Scenario } from "../../scenarios/types";
+import type { Diagnosis } from "../../scenarios/types";
 import { useStage, atOrAfter } from "../../stages/stageMachine";
 import { visualFor, labelFor } from "./bubbleStates";
 import {
@@ -30,21 +30,21 @@ function edgeStateFor(targetVisual: string): PathEdgeState {
   return "calm";
 }
 
-function CanvasInner({ scenario }: { scenario: Scenario }) {
+function CanvasInner({ diagnosis }: { diagnosis: Diagnosis }) {
   const stage = useStage((s) => s.stage);
   const probeOutcome = useStage((s) => s.probeOutcome);
   const { setCenter, fitView } = useReactFlow();
 
   const nodes = useMemo<ThoughtBubbleNodeType[]>(
     () =>
-      scenario.steps.map((step, i) => {
-        const visual = visualFor(step, stage, scenario, probeOutcome);
+      diagnosis.steps.map((step, i) => {
+        const visual = visualFor(step, stage, diagnosis, probeOutcome);
         return {
           id: step.id,
           type: "thought",
           position: positionFor(i),
           data: {
-            label: labelFor(step, visual, scenario),
+            label: labelFor(step, visual, diagnosis),
             caption: step.caption,
             visual,
             order: i,
@@ -53,15 +53,15 @@ function CanvasInner({ scenario }: { scenario: Scenario }) {
           hidden: visual === "hidden",
         };
       }),
-    [scenario, stage, probeOutcome],
+    [diagnosis, stage, probeOutcome],
   );
 
   const edges = useMemo<PathEdgeType[]>(() => {
     // Thoughts hop in during "mapping"; the connections draw at "scanning"
     if (!atOrAfter(stage, "scanning")) return [];
-    return scenario.steps.slice(0, -1).map((step, i) => {
-      const next = scenario.steps[i + 1];
-      const targetVisual = visualFor(next, stage, scenario, probeOutcome);
+    return diagnosis.steps.slice(0, -1).map((step, i) => {
+      const next = diagnosis.steps[i + 1];
+      const targetVisual = visualFor(next, stage, diagnosis, probeOutcome);
       return {
         id: `e-${step.id}`,
         source: step.id,
@@ -70,13 +70,14 @@ function CanvasInner({ scenario }: { scenario: Scenario }) {
         data: { state: edgeStateFor(targetVisual) },
       };
     });
-  }, [scenario, stage, probeOutcome]);
+  }, [diagnosis, stage, probeOutcome]);
 
   // Stage-driven camera: zoom to the wobbly step when it's discovered,
   // pull back out to see the whole path heal.
   useEffect(() => {
-    if (stage === "mixupFound" || stage === "probing") {
-      const i = scenario.steps.findIndex((s) => s.id === scenario.mixupStepId);
+    const mixupId = diagnosis.mixup?.stepId;
+    if ((stage === "mixupFound" || stage === "probing") && mixupId) {
+      const i = diagnosis.steps.findIndex((s) => s.id === mixupId);
       const pos = positionFor(i);
       setCenter(pos.x + 120, pos.y + 60, { zoom: 1.15, duration: 900 });
     } else if (
@@ -88,7 +89,7 @@ function CanvasInner({ scenario }: { scenario: Scenario }) {
     ) {
       fitView({ padding: 0.25, duration: 900 });
     }
-  }, [stage, scenario, setCenter, fitView]);
+  }, [stage, diagnosis, setCenter, fitView]);
 
   return (
     <ReactFlow
@@ -117,10 +118,10 @@ function CanvasInner({ scenario }: { scenario: Scenario }) {
   );
 }
 
-export function PathCanvas({ scenario }: { scenario: Scenario }) {
+export function PathCanvas({ diagnosis }: { diagnosis: Diagnosis }) {
   return (
     <ReactFlowProvider>
-      <CanvasInner scenario={scenario} />
+      <CanvasInner diagnosis={diagnosis} />
     </ReactFlowProvider>
   );
 }

@@ -1,21 +1,26 @@
 import type { DataProvider } from "./provider";
-import { averageSpeed } from "../scenarios/average-speed";
+import { DIAGNOSES, HOMEWORKS, PROBLEMS } from "../scenarios/homework";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Seeded provider that makes the demo bulletproof on stage.
- * Swap `backend` to the Butterbase adapter once the serverless
- * analyze() endpoint exists; the UI will not change.
+ * The live adapter (live.ts) falls back to this on any failure.
  */
 export const mockProvider: DataProvider = {
-  async analyzeReasoning() {
-    await delay(1400); // long enough that "Cora is reading" feels real
-    return averageSpeed;
+  async listHomeworks() {
+    return HOMEWORKS;
   },
-  async getMemoryEvidence() {
-    await delay(300);
-    return averageSpeed.memoryEvidence;
+  async getProblem(problemId) {
+    const p = PROBLEMS[problemId];
+    if (!p) throw new Error(`Unknown problem: ${problemId}`);
+    return p;
+  },
+  async analyzeReasoning(problemId) {
+    await delay(1400); // long enough that "Cora is reading" feels real
+    const d = DIAGNOSES[problemId];
+    if (!d) throw new Error(`No seeded diagnosis for: ${problemId}`);
+    return d;
   },
   async recordLearningSession(topic, summary, score) {
     console.info("[everos-mock] record_learning_session", {
@@ -25,5 +30,3 @@ export const mockProvider: DataProvider = {
     });
   },
 };
-
-export const backend: DataProvider = mockProvider;
