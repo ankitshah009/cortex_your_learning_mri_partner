@@ -245,7 +245,7 @@ function extractJson(text: string): any {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-async function chat(ctx: any, messages: any[]): Promise<string> {
+async function gatewayChat(ctx: any, messages: any[]): Promise<string> {
   const { BUTTERBASE_APP_ID, BUTTERBASE_API_URL, MODEL } = ctx.env;
   const gatewayKey = ctx.env.AI_GATEWAY_KEY || ctx.env.BUTTERBASE_API_KEY;
   const res = await fetch(
@@ -274,6 +274,63 @@ async function chat(ctx: any, messages: any[]): Promise<string> {
   return content;
 }
 
+/**
+ * Direct Anthropic fallback: used when the Butterbase AI gateway is down or
+ * over quota (as on demo day). Text-only — the analyze pipeline never sends
+ * file parts. Model matches the team's dev config (claude-haiku-4-5).
+ */
+async function anthropicChat(ctx: any, messages: any[]): Promise<string> {
+  const apiKey = ctx.env.ANTHROPIC_API_KEY;
+  if (!isStr(apiKey)) throw new Error("AI gateway failed and no ANTHROPIC_API_KEY fallback is configured");
+
+  const system = messages
+    .filter((m) => m.role === "system")
+    .map((m) => String(m.content))
+    .join("\n\n");
+  const converted = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role, content: [{ type: "text", text: String(m.content) }] }));
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: ctx.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
+      max_tokens: 2500,
+      temperature: 0.2,
+      ...(system ? { system } : {}),
+      messages: converted,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Anthropic ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  if (data?.stop_reason === "refusal") throw new Error("Anthropic fallback refused the request");
+  const text = (data?.content ?? [])
+    .filter((b: any) => b?.type === "text" && isStr(b.text))
+    .map((b: any) => b.text)
+    .join("");
+  if (!isStr(text)) throw new Error("Anthropic fallback returned empty content");
+  return text;
+}
+
+/** Gateway first; direct Anthropic when the gateway is down or over quota. */
+async function chat(ctx: any, messages: any[]): Promise<string> {
+  try {
+    return await gatewayChat(ctx, messages);
+  } catch (err: any) {
+    if (!isStr(ctx.env.ANTHROPIC_API_KEY)) throw err;
+    console.warn(`analyze: gateway failed (${err?.message ?? err}); falling back to Anthropic`);
+    return await anthropicChat(ctx, messages);
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Handler                                                             */
 /* ------------------------------------------------------------------ */
@@ -285,6 +342,37 @@ const CORS_HEADERS = {
   "Content-Type": "application/json",
 };
 
+/*
+ * Simple per-IP rate limiter (~30 req/min). Function invocations do not
+ * share isolate memory on this platform, so the counter lives in the app
+ * database (cortex_rate_limits) — one upsert per request, shared across
+ * every instance. Fails open if the counter query errors.
+ */
+const RATE_LIMIT = 30;
+
+async function rateLimited(req: Request, ctx: any): Promise<boolean> {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    "unknown";
+  try {
+    const result = await ctx.db.query(
+      `INSERT INTO cortex_rate_limits (key, count, reset_at)
+       VALUES ($1, 1, now() + interval '60 seconds')
+       ON CONFLICT (key) DO UPDATE SET
+         count = CASE WHEN now() >= cortex_rate_limits.reset_at THEN 1 ELSE cortex_rate_limits.count + 1 END,
+         reset_at = CASE WHEN now() >= cortex_rate_limits.reset_at THEN now() + interval '60 seconds' ELSE cortex_rate_limits.reset_at END
+       RETURNING count`,
+      [`analyze:${ip}`],
+    );
+    return Number(result.rows?.[0]?.count ?? 0) > RATE_LIMIT;
+  } catch (e: any) {
+    console.warn("analyze: rate limit check failed open:", e?.message ?? e);
+    return false;
+  }
+}
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
 }
@@ -295,6 +383,12 @@ export default async function handler(req: Request, ctx: any): Promise<Response>
   }
   if (req.method !== "POST") {
     return json(405, { error: "POST only" });
+  }
+  if (await rateLimited(req, ctx)) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please slow down and try again in a minute." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Retry-After": "60" } },
+    );
   }
 
   let problemId = "";

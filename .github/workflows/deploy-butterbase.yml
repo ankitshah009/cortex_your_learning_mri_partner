@@ -1,12 +1,17 @@
 name: Deploy to Butterbase
 
 # Deploys the Cortex app to Butterbase on every push to main:
-#   - functions/analyze  -> serverless function (Butterbase CLI)
+#   - functions/analyze  -> serverless function (reasoning diagnosis)
+#   - functions/api      -> serverless router (courses, PDF import, analyze,
+#                           evaluate-question, sessions; routed via ?path=)
 #   - frontend/          -> static site at https://cortex.butterbase.dev (REST deploy flow)
 #
 # Required repo configuration (Settings -> Secrets and variables -> Actions):
-#   secret BUTTERBASE_API_KEY   bb_sk_* key for the account that owns the app
-#   variable BUTTERBASE_APP_ID  e.g. app_zqxy9ay6v4jw
+#   secret BUTTERBASE_API_KEY          bb_sk_* key for the account that owns the app
+#   secret BUTTERBASE_AI_GATEWAY_KEY   bb_sk_* key scoped to this app + ai:gateway
+#                                      (function runtime AI calls; REQUIRED — the job
+#                                      fails fast if unset, no fallback to the deploy key)
+#   variable BUTTERBASE_APP_ID         e.g. app_zqxy9ay6v4jw
 
 on:
   push:
@@ -23,43 +28,73 @@ concurrency:
 
 jobs:
   deploy-function:
-    name: Deploy analyze function
+    name: Deploy functions
     runs-on: ubuntu-latest
     env:
       BUTTERBASE_API_KEY: ${{ secrets.BUTTERBASE_API_KEY }}
-      # Scoped app+ai:gateway key for the function runtime; falls back to the
-      # deploy key only until the scoped secret is configured.
-      AI_GATEWAY_KEY: ${{ secrets.BUTTERBASE_AI_GATEWAY_KEY || secrets.BUTTERBASE_API_KEY }}
+      AI_GATEWAY_KEY: ${{ secrets.BUTTERBASE_AI_GATEWAY_KEY }}
+      # Optional: direct-Anthropic fallback for when the Butterbase AI gateway
+      # is down or over quota. Deploys overwrite function env, so this must
+      # ride along or a redeploy silently strips the fallback.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       APP_ID: ${{ vars.BUTTERBASE_APP_ID }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy analyze function (REST)
+      - name: Require BUTTERBASE_AI_GATEWAY_KEY secret
+        run: |
+          if [ -z "$AI_GATEWAY_KEY" ]; then
+            echo "::error::secrets.BUTTERBASE_AI_GATEWAY_KEY is not set. Create a bb_sk_* key scoped to this app with the ai:gateway scope and add it as a repo secret. The function runtime must NOT fall back to the account-wide deploy key."
+            exit 1
+          fi
+
+      - name: Deploy functions (REST)
         run: |
           python3 - <<'EOF'
           import json, os, urllib.request
           app_id = os.environ["APP_ID"]
           key = os.environ["BUTTERBASE_API_KEY"]
-          payload = {
-              "name": "analyze",
-              "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
-              "code": open("functions/analyze/index.ts").read(),
-              "timeoutMs": 60000,
-              "envVars": {"AI_GATEWAY_KEY": os.environ["AI_GATEWAY_KEY"], "MODEL": "openai/gpt-4o-mini"},
-              "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
-          }
-          req = urllib.request.Request(
-              f"https://api.butterbase.ai/v1/{app_id}/functions",
-              data=json.dumps(payload).encode(),
-              headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-              method="POST",
-          )
-          with urllib.request.urlopen(req, timeout=120) as res:
-              body = json.load(res)
-          print("deployed:", body.get("name"), "->", body.get("url"))
+          ai_key = os.environ["AI_GATEWAY_KEY"]
+          anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+          fallback_env = {"ANTHROPIC_API_KEY": anthropic_key} if anthropic_key else {}
+          functions = [
+              {
+                  "name": "analyze",
+                  "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
+                  "code": open("functions/analyze/index.ts").read(),
+                  "timeoutMs": 60000,
+                  "envVars": {"AI_GATEWAY_KEY": ai_key, "MODEL": "anthropic/claude-haiku-4.5", **fallback_env},
+                  "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
+              },
+              {
+                  "name": "api",
+                  "description": "Cortex API router: courses, PDF homework import, analyze, evaluate-question, sessions (route via ?path=)",
+                  "code": open("functions/api/index.ts").read(),
+                  "timeoutMs": 120000,
+                  "memoryLimitMb": 512,
+                  "envVars": {
+                      "AI_GATEWAY_KEY": ai_key,
+                      "MODEL": "anthropic/claude-haiku-4.5",
+                      "EXTRACTION_MODEL": "anthropic/claude-haiku-4.5",
+                      **fallback_env,
+                  },
+                  # No method restriction: the router serves GET and POST.
+                  "trigger": {"type": "http", "config": {"auth": "none"}},
+              },
+          ]
+          for payload in functions:
+              req = urllib.request.Request(
+                  f"https://api.butterbase.ai/v1/{app_id}/functions",
+                  data=json.dumps(payload).encode(),
+                  headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=120) as res:
+                  body = json.load(res)
+              print("deployed:", body.get("name"), "->", body.get("url"))
           EOF
 
-      - name: Smoke-test the deployed function
+      - name: Smoke-test the analyze function
         run: |
           RESP=$(curl -sS -m 90 -X POST "https://api.butterbase.ai/v1/$APP_ID/fn/analyze" \
             -H 'content-type: application/json' \
@@ -70,7 +105,29 @@ jobs:
           d = json.load(sys.stdin)
           assert isinstance(d.get('steps'), list) and d['steps'], 'no steps in diagnosis'
           assert 'celebration' in d, 'no celebration in diagnosis'
-          print('\nfunction smoke test passed')"
+          print('\nanalyze smoke test passed')"
+
+      - name: Smoke-test the api function
+        run: |
+          HEALTH=$(curl -sS -m 30 "https://api.butterbase.ai/v1/$APP_ID/fn/api?path=/health")
+          echo "$HEALTH"
+          echo "$HEALTH" | python3 -c "
+          import json,sys
+          d = json.load(sys.stdin)
+          assert d.get('ok') is True, 'api health check failed'
+          assert d.get('hasGatewayKey') is True, 'api function is missing AI_GATEWAY_KEY'
+          print('api health check passed')"
+          RESP=$(curl -sS -m 60 -X POST "https://api.butterbase.ai/v1/$APP_ID/fn/api?path=/api/evaluate-question" \
+            -H 'content-type: application/json' \
+            -d '{"question":"Why do we divide total distance by total time instead of averaging the two speeds?","problem":{"title":"CI smoke","statement":"A car travels 120 miles in two hours. What was its average speed?"},"currentUnderstanding":40,"mode":"student_question"}')
+          echo "$RESP" | head -c 400
+          echo "$RESP" | python3 -c "
+          import json,sys
+          d = json.load(sys.stdin)
+          assert isinstance(d.get('depth'), str) and d['depth'], 'no depth in evaluation'
+          assert isinstance(d.get('understandingDelta'), (int, float)), 'no understandingDelta'
+          assert d.get('feedbackToStudent'), 'no feedbackToStudent'
+          print('\napi evaluate-question smoke test passed')"
 
   deploy-frontend:
     name: Deploy frontend
@@ -92,9 +149,16 @@ jobs:
         working-directory: frontend
         env:
           VITE_ANALYZE_URL: https://api.butterbase.ai/v1/${{ vars.BUTTERBASE_APP_ID }}/fn/analyze
+          # Plain function URL: live.ts appends ?path=<route> itself (Butterbase
+          # functions only resolve at exactly /fn/api; the deployed router reads
+          # the logical route from the ?path= query parameter).
+          VITE_CORTEX_API_URL: https://api.butterbase.ai/v1/${{ vars.BUTTERBASE_APP_ID }}/fn/api
         run: |
           npm ci
           npx tsc --noEmit
+          if [ -f vitest.config.ts ] || grep -q '"test"' package.json; then
+            npx vitest run
+          fi
           npm run build
 
       - name: Zip dist (forward-slash paths)

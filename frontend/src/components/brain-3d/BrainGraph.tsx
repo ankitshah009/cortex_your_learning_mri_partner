@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import type { CourseColor, CourseGraph } from "../../scenarios/types";
@@ -29,12 +29,37 @@ function placeNodes(graph: CourseGraph): PlacedNode[] {
   return graph.nodes.map((node, i) => ({ ...node, position: positions[i] }));
 }
 
+/* ---------- Low-power render loop for non-interactive preview cards ---------- */
+
+/**
+ * With `frameloop="demand"` the canvas only renders when invalidated. This
+ * ticks a slow invalidate so idle course-card brains still spin, but at a few
+ * frames per second instead of a full 60fps rAF loop per card.
+ */
+function IdleInvalidator({ fps = 8 }: { fps?: number }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    const id = window.setInterval(() => invalidate(), 1000 / fps);
+    return () => window.clearInterval(id);
+  }, [invalidate, fps]);
+  return null;
+}
+
 /* ---------- The brain "tissue": a dim neuron point cloud giving the shape ---------- */
 
-function TissueField({ accent }: { accent: string }) {
+function TissueField({
+  accent,
+  animate,
+  pointCount,
+}: {
+  accent: string;
+  /** false on preview cards: skip the breathing animation entirely */
+  animate: boolean;
+  pointCount: number;
+}) {
   const ref = useRef<THREE.Points>(null);
   const { geometry, material } = useMemo(() => {
-    const pts = sampleBrainVolume(900, 3, 0.82);
+    const pts = sampleBrainVolume(pointCount, 3, 0.82);
     const positions = new Float32Array(pts.length * 3);
     pts.forEach((p, i) => {
       positions[i * 3] = p.x;
@@ -53,9 +78,10 @@ function TissueField({ accent }: { accent: string }) {
       blending: THREE.AdditiveBlending,
     });
     return { geometry: geo, material: mat };
-  }, [accent]);
+  }, [accent, pointCount]);
 
   useFrame(({ clock }) => {
+    if (!animate) return;
     // Gentle breathing so the tissue never looks frozen.
     if (ref.current) {
       const t = clock.getElapsedTime();
@@ -77,6 +103,7 @@ function Neuron({
   active,
   onHover,
   onSelect,
+  animate,
 }: {
   node: PlacedNode;
   accent: string;
@@ -88,6 +115,8 @@ function Neuron({
   active: boolean;
   onHover: (id: string | null) => void;
   onSelect?: (id: string) => void;
+  /** false on preview cards: no breathing/pulse, lower geometry detail */
+  animate: boolean;
 }) {
   const ref = useRef<THREE.Mesh>(null);
   const haloRef = useRef<THREE.Mesh>(null);
@@ -108,8 +137,13 @@ function Neuron({
     if (!ref.current) return;
     const t = clock.getElapsedTime();
 
-    // Wobbly concepts pulse to say "come fix me"; strong ones breathe slowly.
-    let scale = node.wobbly ? 1 + Math.sin(t * 3) * 0.14 : 1 + Math.sin(t * 1.2) * 0.05;
+    // Preview cards skip per-frame breathing/pulse; only the completion burst
+    // (below) still animates so fired neurons stay visible everywhere.
+    let scale = 1;
+    if (animate) {
+      // Wobbly concepts pulse to say "come fix me"; strong ones breathe slowly.
+      scale = node.wobbly ? 1 + Math.sin(t * 3) * 0.14 : 1 + Math.sin(t * 1.2) * 0.05;
+    }
 
     // Completion burst: a sharp expand-and-settle when the neuron fires.
     if (fireStart.current !== null) {
@@ -119,6 +153,9 @@ function Neuron({
       } else {
         fireStart.current = null;
       }
+    } else if (!animate && !active) {
+      // Nothing to animate: leave the static scale untouched unless it drifted.
+      if (ref.current.scale.x === 1) return;
     }
     ref.current.scale.setScalar(scale);
     if (haloRef.current) haloRef.current.scale.setScalar(scale * 1.5);
@@ -162,7 +199,9 @@ function Neuron({
           onSelect?.(node.id);
         }}
       >
-        <sphereGeometry args={[focused ? size * 1.35 : size, 24, 24]} />
+        <sphereGeometry
+          args={[focused ? size * 1.35 : size, animate ? 24 : 12, animate ? 24 : 12]}
+        />
         <meshStandardMaterial
           color={color}
           emissive={color}
@@ -172,7 +211,7 @@ function Neuron({
         />
       </mesh>
       <mesh ref={haloRef}>
-        <sphereGeometry args={[size, 12, 12]} />
+        <sphereGeometry args={[size, animate ? 12 : 8, animate ? 12 : 8]} />
         <meshBasicMaterial
           color={color}
           transparent
@@ -222,6 +261,7 @@ function Synapse({
   phase,
   dimmed,
   boosted,
+  animate,
 }: {
   from: THREE.Vector3;
   to: THREE.Vector3;
@@ -232,6 +272,8 @@ function Synapse({
   dimmed: boolean;
   /** brightened + sped up because it touches the concept being chatted with */
   boosted: boolean;
+  /** false on preview cards: no traveling signal bead, static line only */
+  animate: boolean;
 }) {
   const pulseRef = useRef<THREE.Mesh>(null);
 
@@ -264,7 +306,7 @@ function Synapse({
       : boosted
         ? Math.min(0.85, 0.4 + strength * 0.4)
         : 0.12 + strength * 0.28;
-    if (!pulseRef.current) return;
+    if (!animate || !pulseRef.current) return;
     // A light bead travels from source to target on a loop; activated
     // synapses fire their signal roughly twice as fast.
     const speed = boosted ? 0.75 : 0.35;
@@ -281,16 +323,18 @@ function Synapse({
   return (
     <group>
       <primitive object={new THREE.Line(lineGeometry, lineMaterial)} />
-      <mesh ref={pulseRef}>
-        <sphereGeometry args={[0.05, 8, 8]} />
-        <meshBasicMaterial
-          color={accent}
-          transparent
-          opacity={0.6}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
+      {animate && (
+        <mesh ref={pulseRef}>
+          <sphereGeometry args={[0.05, 8, 8]} />
+          <meshBasicMaterial
+            color={accent}
+            transparent
+            opacity={0.6}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -320,8 +364,11 @@ function BrainScene({
   useFrame((_, delta) => {
     // Idle cards spin; the interactive brain also drifts, but pauses on hover
     // or while a concept chat is open so the reader can study that concept.
+    // Non-interactive cards render on a slow demand loop, so clamp delta to
+    // keep the spin smooth after long gaps (tab switches, throttled timers).
     if (groupRef.current && (!interactive || (hovered === null && !activeId))) {
-      groupRef.current.rotation.y += delta * (interactive ? 0.12 : 0.22);
+      const step = Math.min(delta, 0.25);
+      groupRef.current.rotation.y += step * (interactive ? 0.12 : 0.22);
     }
   });
 
@@ -331,7 +378,11 @@ function BrainScene({
       <pointLight position={[6, 6, 6]} intensity={1.1} />
       <pointLight position={[-6, -4, -4]} intensity={0.5} color={accent} />
       <group ref={groupRef}>
-        <TissueField accent={accent} />
+        <TissueField
+          accent={accent}
+          animate={interactive}
+          pointCount={interactive ? 900 : 350}
+        />
         {graph.edges.map((edge, i) => {
           const a = byId.get(edge.source);
           const b = byId.get(edge.target);
@@ -353,6 +404,7 @@ function BrainScene({
               phase={(i * 0.137) % 1}
               dimmed={!connected}
               boosted={boosted}
+              animate={interactive}
             />
           );
         })}
@@ -366,6 +418,7 @@ function BrainScene({
             active={activeId === node.id}
             onHover={setHovered}
             onSelect={onNodeSelect}
+            animate={interactive}
           />
         ))}
       </group>
@@ -450,7 +503,12 @@ export function BrainGraph({
         camera={{ position: [0, 0.3, 8], fov: 50 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
+        // Preview cards render on demand at a few fps instead of running a
+        // full 60fps loop per card — with many courses that's the difference
+        // between one busy GPU and a melted demo laptop.
+        frameloop={interactive ? "always" : "demand"}
       >
+        {!interactive && <IdleInvalidator fps={8} />}
         <BrainScene
           graph={graph}
           accent={accent}

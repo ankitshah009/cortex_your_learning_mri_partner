@@ -55,12 +55,31 @@ function saveImportedLibrary(library: HomeworkLibrary) {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
 }
 
+/**
+ * Provenance of a Diagnosis returned by the live provider, so the judge
+ * panel can be honest about where the data came from. Unset means the
+ * provider ran in mock-only mode (no live endpoint configured).
+ */
+export type DiagnosisSource = "live" | "seeded-fallback";
+export type LiveDiagnosis = Diagnosis & { source?: DiagnosisSource };
+
 function validateDiagnosis(data: Diagnosis, problemId: string): Diagnosis {
   if (!Array.isArray(data.steps) || data.steps.length === 0) {
     throw new Error("diagnosis missing steps");
   }
   if (!data.celebration?.headline || !data.celebration?.sub) {
     throw new Error("diagnosis missing celebration");
+  }
+  if (data.mixup) {
+    if (!data.steps.some((s) => s.id === data.mixup!.stepId)) {
+      throw new Error("diagnosis mixup.stepId does not match any step id");
+    }
+    if (
+      !Array.isArray(data.mixup.probe?.options) ||
+      data.mixup.probe.options.length === 0
+    ) {
+      throw new Error("diagnosis mixup.probe.options must be a non-empty array");
+    }
   }
   return { ...data, problemId };
 }
@@ -73,15 +92,22 @@ function validateDiagnosis(data: Diagnosis, problemId: string): Diagnosis {
  *   POST {url}  body: { problemId, problem: { title, statement }, reasoning }
  *   response: a Diagnosis JSON (see scenarios/types.ts)
  *
- * Failures on seeded problems silently fall back to the seeded diagnosis
- * so a live demo can never stall. Custom problems have no seed, so a
- * failure propagates and the UI shows its retry state.
+ * Failures on seeded problems fall back to the seeded diagnosis so a live
+ * demo can never stall — the returned Diagnosis is tagged with
+ * source: "seeded-fallback" (vs "live") so the judge panel can disclose it.
+ * Custom problems have no seed, so a failure propagates and the UI shows
+ * its retry state.
  */
 export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
   const apiBaseUrl = options.apiBaseUrl
     ? normalizeBaseUrl(options.apiBaseUrl)
     : undefined;
   const analyzeUrl = options.analyzeUrl;
+  // Butterbase functions are reachable only at exactly /v1/{app}/fn/{name} —
+  // subpaths 404 at the platform edge. The deployed `api` router function
+  // reads the intended route from ?path=, so all API calls go through here.
+  const apiUrl = (path: string) =>
+    `${apiBaseUrl}?path=${encodeURIComponent(path)}`;
   let importedLibrary = loadImportedLibrary();
   let createdCourses = loadCreatedCourses();
 
@@ -102,7 +128,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       const course = makeCourse(input);
       if (apiBaseUrl) {
         try {
-          const res = await fetch(`${apiBaseUrl}/api/courses`, {
+          const res = await fetch(apiUrl("/api/courses"), {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify(input),
@@ -132,7 +158,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
     async getConceptBrief(input) {
       if (!apiBaseUrl) return mockProvider.getConceptBrief(input);
       try {
-        const res = await fetch(`${apiBaseUrl}/api/concept-brief`, {
+        const res = await fetch(apiUrl("/api/concept-brief"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
@@ -154,7 +180,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       form.append("file", file);
       form.append("courseId", targetCourseId);
 
-      const res = await fetch(`${apiBaseUrl}/api/homeworks/import-pdf`, {
+      const res = await fetch(apiUrl("/api/homeworks/import-pdf"), {
         method: "POST",
         body: form,
       });
@@ -187,12 +213,12 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
     async analyzeReasoning(problemId, reasoning): Promise<Diagnosis> {
       const problem = getLibrary().problems[problemId] as Problem | undefined;
       if (!problem) throw new Error(`Unknown problem: ${problemId}`);
-      const url = apiBaseUrl ? `${apiBaseUrl}/api/analyze` : analyzeUrl;
+      const url = apiBaseUrl ? apiUrl("/api/analyze") : analyzeUrl;
       if (!url) return mockProvider.analyzeReasoning(problemId, reasoning);
 
       try {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 20000);
+        const timer = setTimeout(() => ctrl.abort(), 45000);
         const res = await fetch(url, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -202,12 +228,20 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
         clearTimeout(timer);
         if (!res.ok) throw new Error(`analyze returned ${res.status}`);
         const data = (await res.json()) as Diagnosis;
-        return validateDiagnosis(data, problemId);
+        const live: LiveDiagnosis = {
+          ...validateDiagnosis(data, problemId),
+          source: "live",
+        };
+        return live;
       } catch (err) {
         console.warn("[live] analyze failed, using seeded diagnosis", err);
         // No seed exists for PDF-imported problems: rethrow to the UI.
         if (problem.source === "pdf") throw err;
-        return mockProvider.analyzeReasoning(problemId, reasoning);
+        const seeded: LiveDiagnosis = {
+          ...(await mockProvider.analyzeReasoning(problemId, reasoning)),
+          source: "seeded-fallback",
+        };
+        return seeded;
       }
     },
     async evaluateStudentQuestion(input) {
@@ -216,7 +250,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 12000);
-        const res = await fetch(`${apiBaseUrl}/api/evaluate-question`, {
+        const res = await fetch(apiUrl("/api/evaluate-question"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
@@ -235,7 +269,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
         return mockProvider.recordLearningSession(topic, summary, score);
       }
       try {
-        await fetch(`${apiBaseUrl}/api/sessions`, {
+        await fetch(apiUrl("/api/sessions"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ topic, summary, score }),

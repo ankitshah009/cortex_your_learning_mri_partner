@@ -12,7 +12,11 @@ import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
 import { ProblemCard, StageCard } from "../components/panels/StageRail";
-import { coraLine, coraExpression } from "../lib/coraScript";
+import {
+  coraLine,
+  coraExpression,
+  READING_WAIT_LINES,
+} from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
 
 /** Remounts the scan for every problem so all state starts fresh */
@@ -88,6 +92,10 @@ function SolveScan({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
+    // Reaching "celebrated" is gated upstream: the mixup path only advances
+    // through RepairLab once the understanding meter crosses the mastery
+    // threshold, and a solid diagnosis skips the arc entirely — so both
+    // paths may celebrate (and complete) unconditionally here.
     if (stage === "celebrated" && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
@@ -297,6 +305,17 @@ function IntroLayout({
 }
 
 function ReadingOverlay() {
+  // Live analysis can take up to ~45s; step through progressively more
+  // reassuring copy so the wait never feels stuck. Text swaps aren't
+  // animated (so nothing new to gate on prefers-reduced-motion); the
+  // existing pulse on the line is kept as-is.
+  const [lineIndex, setLineIndex] = useState(0);
+  useEffect(() => {
+    const timers = READING_WAIT_LINES.filter((l) => l.afterMs > 0).map(
+      (line, i) => setTimeout(() => setLineIndex(i + 1), line.afterMs),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
   return (
     <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center">
@@ -306,7 +325,7 @@ function ReadingOverlay() {
           transition={{ duration: 1.4, repeat: Infinity }}
           className="mt-4 font-display text-xl font-extrabold text-ink-soft"
         >
-          Cora is reading your thinking...
+          {READING_WAIT_LINES[lineIndex].text}
         </motion.p>
       </div>
     </div>

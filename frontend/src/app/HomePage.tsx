@@ -1,4 +1,4 @@
-import { Suspense, useState, type ChangeEvent } from "react";
+import { Suspense, useMemo, useState, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import { useApp } from "../state/store";
@@ -6,6 +6,7 @@ import { courseProgress, buildCourseGraph } from "../scenarios/knowledgeGraph";
 import type {
   Course,
   CourseColor,
+  CourseGraph,
   CreateCourseInput,
   HomeworkLibrary,
 } from "../scenarios/types";
@@ -21,18 +22,36 @@ const COURSE_EMOJI = ["🧮", "🔬", "📖", "🌍", "🎨", "🎵", "💻", "�
 const COURSE_COLORS: CourseColor[] = ["lav", "teal", "coral", "sky", "gold"];
 
 export function HomePage() {
-  const { profile, completedProblems, understandingByProblem } = useApp();
+  // Scoped selectors: only re-render when the slices we actually use change,
+  // not on every store update.
+  const profile = useApp((s) => s.profile);
+  const completedProblems = useApp((s) => s.completedProblems);
+  const understandingByProblem = useApp((s) => s.understandingByProblem);
   const { courses, library, loading, error, createCourse, refresh } =
     useCourses();
-  if (!profile) return <WelcomeScreen />;
 
-  const totalConnections = courses.reduce(
-    (sum, c) =>
-      sum +
-      buildCourseGraph(c, library, completedProblems, understandingByProblem)
-        .edges.length,
-    0,
+  // Build each course's graph exactly once per data change and reuse it for
+  // both the connection count and the card previews. Stable graph identity
+  // also keeps BrainGraph's node placement / fired-node effects from
+  // re-running on unrelated re-renders.
+  const courseGraphs = useMemo(
+    () =>
+      new Map<string, CourseGraph>(
+        courses.map((c) => [
+          c.id,
+          buildCourseGraph(c, library, completedProblems, understandingByProblem),
+        ]),
+      ),
+    [courses, library, completedProblems, understandingByProblem],
   );
+
+  const totalConnections = useMemo(() => {
+    let sum = 0;
+    for (const graph of courseGraphs.values()) sum += graph.edges.length;
+    return sum;
+  }, [courseGraphs]);
+
+  if (!profile) return <WelcomeScreen />;
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
@@ -98,6 +117,7 @@ export function HomePage() {
                 key={course.id}
                 course={course}
                 library={library}
+                graph={courseGraphs.get(course.id)!}
                 delay={0.06 + i * 0.05}
               />
             ))}
@@ -126,16 +146,17 @@ export function HomePage() {
 function CourseCard({
   course,
   library,
+  graph,
   delay,
 }: {
   course: Course;
   library: HomeworkLibrary;
+  /** prebuilt (memoized) graph from HomePage — do not rebuild per render */
+  graph: CourseGraph;
   delay: number;
 }) {
   const completed = useApp((s) => s.completedProblems);
-  const understanding = useApp((s) => s.understandingByProblem);
   const { done, total } = courseProgress(course, library, completed);
-  const graph = buildCourseGraph(course, library, completed, understanding);
   const hwCount = course.homeworkIds.length;
 
   return (
