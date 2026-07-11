@@ -27,6 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       BUTTERBASE_API_KEY: ${{ secrets.BUTTERBASE_API_KEY }}
+      # Scoped app+ai:gateway key for the function runtime; falls back to the
+      # deploy key only until the scoped secret is configured.
+      AI_GATEWAY_KEY: ${{ secrets.BUTTERBASE_AI_GATEWAY_KEY || secrets.BUTTERBASE_API_KEY }}
       APP_ID: ${{ vars.BUTTERBASE_APP_ID }}
     steps:
       - uses: actions/checkout@v4
@@ -42,7 +45,7 @@ jobs:
               "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
               "code": open("functions/analyze/index.ts").read(),
               "timeoutMs": 60000,
-              "envVars": {"BUTTERBASE_API_KEY": key, "MODEL": "openai/gpt-4o-mini"},
+              "envVars": {"AI_GATEWAY_KEY": os.environ["AI_GATEWAY_KEY"], "MODEL": "openai/gpt-4o-mini"},
               "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
           }
           req = urllib.request.Request(
