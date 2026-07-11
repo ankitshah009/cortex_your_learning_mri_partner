@@ -5,7 +5,7 @@ enough context to pick up cold.
 
 ## P1 — correctness
 
-- [ ] **Fix prompt-contaminated understanding scoring.** `classifyTurn` in
+- [x] **Fix prompt-contaminated understanding scoring.** `classifyTurn` in
   `frontend/src/backend/mock.ts` concatenates Cora's prompt with the student
   response, so a prompt containing "remember"/"future"/"similar" earns
   high-value evidence (+17 memory_rule) regardless of what the student typed.
@@ -15,7 +15,7 @@ enough context to pick up cold.
   Why deferred: changes learning-progression behavior; deserves its own change
   and a quick play-through, not a drive-by during demo prep.
 
-- [ ] **"Correct" probe answer still teaches the mix-up and records "repaired".**
+- [x] **"Correct" probe answer still teaches the mix-up and records "repaired".**
   `StageRail.tsx` confirmed-stage copy acknowledges a plot twist, but completion
   logic keys off `diagnosis.mixup`, not `probeOutcome`
   (`SolvePage.tsx` celebration effect). A learner who answers the probe
@@ -41,8 +41,8 @@ enough context to pick up cold.
 - [ ] **EverOS key architecture.** `VITE_EVEROS_API_KEY` inlines a bearer token
   into the public bundle if ever set in a deployed build (currently unset in
   CI, so nothing leaks today). Move EverOS calls server-side (the `api`
-  function) before enabling memory in production. Also: `getMemoryEvidence`
-  is implemented but has no caller — wire it in or drop it.
+  function) before enabling memory in production. (`getMemoryEvidence` is now
+  wired in via `conceptMemory.ts`.)
 
 - [ ] **localStorage schema versioning/migration.** Four persistence namespaces
   (`cortex-app`, `cortex-created-courses`, `cortex-imported-homework-library`,
@@ -51,12 +51,12 @@ enough context to pick up cold.
 
 ## P3 — cleanup / product
 
-- [ ] **Dead code sweep.** `parseJsonObject` (cortex-api.mjs:810),
-  `islandStates`/`IslandMap` (pre-3D visualization), duplicated
-  `slugify`/color palettes between `courseStore.ts` and `cortex-api.mjs`
-  (already drifted: random vs modulo color).
+- [x] **Dead code sweep.** `parseJsonObject` (cortex-api.mjs),
+  `islandStates`/`IslandMap` (pre-3D visualization) — all deleted.
+- [ ] **Dedupe `slugify`/color palettes** between `courseStore.ts` and
+  `cortex-api.mjs` (already drifted: random vs modulo color).
 
-- [ ] **Knowledge graph edges measure combinatorics, not knowledge.** Every
+- [x] **Knowledge graph edges measure combinatorics, not knowledge.** Every
   concept pair in a course gets an edge (`coOccurrence` incremented once per
   pair). Compute co-occurrence at the problem level so "connections grown"
   means something.
@@ -65,10 +65,10 @@ enough context to pick up cold.
   problem among ten yields ~90% mastery (`knowledgeGraph.ts` evidenceRatio).
   Weight by coverage of the concept's problems.
 
-- [ ] **Neuron firing after a solve rarely renders.** The graph unmounts during
+- [x] **Neuron firing after a solve rarely renders.** The graph unmounts during
   solving, so `useFiredNodes` has no previous map to diff on return
-  (`BrainGraph.tsx`). Persist last-seen mastery per node (store) so the fire
-  animation triggers on remount.
+  (`BrainGraph.tsx`). Fixed: last-seen mastery per node persists at module
+  level, so the fire animation triggers on remount.
 
 ## From the CEO review (90-day platform plan)
 
@@ -82,4 +82,4 @@ Plan: `~/.gstack/projects/ankitshah009-cortex_your_learning_mri_partner/ceo-plan
 - [ ] **Multi-domain expansion** — gated on the first domain meeting the eval bar
   (first-divergence agreement ≥75%, ECE ≤ 0.10).
 
-- [ ] **Implement /api/concept-brief in functions/api.** Phong's concept chat calls it via the ?path= router; the deployed function lacks the route, so live concept briefs currently fall back to the local heuristic (safe but not real LLM). Port the cortex-api.mjs concept-brief handler.
+- [x] **Implement /api/concept-brief in functions/api.** Phong's concept chat calls it via the ?path= router; the deployed function lacks the route, so live concept briefs currently fall back to the local heuristic (safe but not real LLM). Port the cortex-api.mjs concept-brief handler.

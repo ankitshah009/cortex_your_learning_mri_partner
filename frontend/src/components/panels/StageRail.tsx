@@ -222,7 +222,7 @@ export function StageCard({
             </p>
             <p className="mt-2 text-sm font-semibold leading-relaxed">
               {gotItRight
-                ? "You got this one right! So the first answer was probably a slip, not a mix-up. Let's make this idea super solid anyway."
+                ? "You got this one right! So the first answer was probably a slip, not a mix-up — your thinking is solid."
                 : `It's the ${mixup.hypothesis.name}! ${mixup.confirmLine}`}
             </p>
             <ConfidenceMeter
@@ -236,9 +236,9 @@ export function StageCard({
             <ChunkyButton
               variant="teal"
               className="mt-4 w-full"
-              onClick={() => goTo("lesson")}
+              onClick={() => goTo(gotItRight ? "celebrated" : "lesson")}
             >
-              Show me the tiny fix
+              {gotItRight ? "Lock it in! ✨" : "Show me the tiny fix"}
             </ChunkyButton>
           </Card>
         );

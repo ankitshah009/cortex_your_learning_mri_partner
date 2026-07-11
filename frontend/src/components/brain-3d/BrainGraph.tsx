@@ -441,19 +441,25 @@ function BrainScene({
  * (a freshly completed concept) so its neuron fires. Returns the set of firing
  * ids, cleared shortly after each burst.
  */
+// Module-level so mastery seen before the graph unmounts (e.g. while the
+// student is inside a solve) survives remount and the gain still fires.
+const lastSeenMastery = new Map<string, number>();
+
 function useFiredNodes(graph: CourseGraph): Set<string> {
-  const prev = useRef<Map<string, number>>(new Map());
+  const prev = useRef<Map<string, number> | null>(null);
+  if (prev.current === null) prev.current = new Map(lastSeenMastery);
   const [fired, setFired] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const justFired = new Set<string>();
     for (const node of graph.nodes) {
-      const before = prev.current.get(node.id);
+      const before = prev.current?.get(node.id);
       if (before !== undefined && node.mastery > before + 0.001) {
         justFired.add(node.id);
       }
     }
     prev.current = new Map(graph.nodes.map((n) => [n.id, n.mastery]));
+    for (const [id, mastery] of prev.current) lastSeenMastery.set(id, mastery);
     if (justFired.size > 0) {
       setFired(justFired);
       const timer = setTimeout(() => setFired(new Set()), 1300);

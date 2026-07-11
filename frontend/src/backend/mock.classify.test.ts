@@ -111,15 +111,16 @@ describe("cora_prompt_response classification", () => {
     expect(r.understandingDelta).toBe(8);
   });
 
-  it("includes Cora's prompt text in the classification (prompt keywords can trigger memory_rule)", async () => {
-    // The question alone has no keywords, but the prompt contains "remember".
+  it("ignores Cora's prompt text (prompt keywords cannot inflate the score)", async () => {
+    // The prompt contains "remember" but the student's answer has no
+    // keywords — classification must score the student's words only.
     const r = await evaluate(
       "the units",
       "cora_prompt_response",
       "What will you remember to do?",
     );
-    expect(r.depth).toBe("memory_rule");
-    expect(r.understandingDelta).toBe(30);
+    expect(r.depth).toBe("surface_confusion");
+    expect(r.understandingDelta).toBe(8);
   });
 
   it("uses question classification (not turn classification) when mode is student_question", async () => {

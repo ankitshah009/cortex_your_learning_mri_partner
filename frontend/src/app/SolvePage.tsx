@@ -101,22 +101,25 @@ function SolveScan({ problemId }: { problemId: string }) {
     if (stage === "celebrated" && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
-      markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
+      // A correct probe answer means the flagged step was a slip, not a
+      // believed mix-up — record it as solid understanding, not a repair.
+      const mixup = probeOutcome === "correct" ? null : diagnosis.mixup;
+      markCompleted(problem.id, mixup ? "repaired" : "solid");
       addUnderstandingSignal(problem.id, {
-        kind: diagnosis.mixup ? "lesson_reflection" : "transfer",
-        label: diagnosis.mixup ? "Completed repair loop" : "Solid reasoning",
-        delta: diagnosis.mixup ? 12 : 24,
-        evidenceClass: diagnosis.mixup ? "guided_success" : "immediate_transfer",
-        evidence: diagnosis.mixup
+        kind: mixup ? "lesson_reflection" : "transfer",
+        label: mixup ? "Completed repair loop" : "Solid reasoning",
+        delta: mixup ? 12 : 24,
+        evidenceClass: mixup ? "guided_success" : "immediate_transfer",
+        evidence: mixup
           ? "Student completed the scan after a diagnosed mix-up."
           : "Student reasoning was solid on the first scan.",
       });
       backend.recordLearningSession(
         problem.title,
-        diagnosis.mixup
-          ? `Found and repaired the ${diagnosis.mixup.hypothesis.name}`
+        mixup
+          ? `Found and repaired the ${mixup.hypothesis.name}`
           : "Solid reasoning on the first try",
-        diagnosis.mixup ? 95 : 100,
+        mixup ? 95 : 100,
       );
     }
     if (stage !== "celebrated") celebratedRef.current = false;
