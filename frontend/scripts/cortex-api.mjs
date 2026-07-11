@@ -49,8 +49,11 @@ const server = createServer(async (req, res) => {
     }
 
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    // Match the deployed function's contract: the frontend routes through a
+    // ?path= query param (the Butterbase edge 404s on URL subpaths).
+    const route = url.searchParams.get("path") || url.pathname;
 
-    if (req.method === "GET" && url.pathname === "/health") {
+    if (req.method === "GET" && route === "/health") {
       return sendJson(res, 200, {
         ok: true,
         reasoningModel: REASONING_MODEL,
@@ -60,44 +63,44 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    if (req.method === "GET" && url.pathname === "/api/courses") {
+    if (req.method === "GET" && route === "/api/courses") {
       return sendJson(res, 200, [...courses.values()]);
     }
 
-    if (req.method === "POST" && url.pathname === "/api/courses") {
+    if (req.method === "POST" && route === "/api/courses") {
       return sendJson(res, 200, createCourse(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/homeworks/import-pdf") {
+    if (req.method === "POST" && route === "/api/homeworks/import-pdf") {
       return sendJson(res, 200, await importHomeworkPdf(req));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/analyze") {
+    if (req.method === "POST" && route === "/api/analyze") {
       return sendJson(res, 200, await analyzeReasoning(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/learning-context") {
+    if (req.method === "POST" && route === "/api/learning-context") {
       const input = await readJson(req);
       return sendJson(res, 200, await findLearningContext(input));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/concept-brief") {
+    if (req.method === "POST" && route === "/api/concept-brief") {
       return sendJson(res, 200, await createConceptBrief(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/evaluate-question") {
+    if (req.method === "POST" && route === "/api/evaluate-question") {
       return sendJson(res, 200, await evaluateStudentQuestion(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/brain-check") {
+    if (req.method === "POST" && route === "/api/brain-check") {
       return sendJson(res, 200, await createBrainCheck(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/brain-check/evaluate") {
+    if (req.method === "POST" && route === "/api/brain-check/evaluate") {
       return sendJson(res, 200, await evaluateBrainCheck(await readJson(req)));
     }
 
-    if (req.method === "POST" && url.pathname === "/api/sessions") {
+    if (req.method === "POST" && route === "/api/sessions") {
       sessions.push({ ...(await readJson(req)), recordedAt: new Date().toISOString() });
       return sendJson(res, 200, { ok: true });
     }
