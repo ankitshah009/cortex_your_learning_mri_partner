@@ -430,7 +430,36 @@ async function extractQuestionsFromPdf(
   };
 }
 
-async function importHomeworkPdf(ctx: any, req: Request): Promise<Response> {
+/**
+ * Read the uploaded PDF from either contract. JSON with client-side base64 is
+ * the primary path: the platform's multipart parser corrupts binary bodies
+ * (non-ASCII bytes in compressed PDF streams get text-decoded), so the
+ * browser encodes the file itself. Multipart remains for older clients and
+ * ASCII-safe test uploads.
+ */
+async function readPdfUpload(
+  req: Request,
+): Promise<{ fileName: string; courseId?: string; pdfBase64: string }> {
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const body = await req.json().catch(() => null);
+    const raw = isStr(body?.pdfBase64)
+      ? body.pdfBase64.replace(/^data:application\/pdf;base64,/, "")
+      : "";
+    if (!raw) throw httpError(400, "Expected a base64 PDF in 'pdfBase64'.");
+    if (!raw.startsWith("JVBER")) {
+      throw httpError(400, "That file does not look like a PDF.");
+    }
+    if (raw.length * 0.75 > MAX_PDF_BYTES) {
+      throw httpError(413, "PDF is too large to import.");
+    }
+    return {
+      fileName: cleanString(body.fileName) || "homework.pdf",
+      courseId: cleanString(body.courseId) || undefined,
+      pdfBase64: raw,
+    };
+  }
+
   const form = await req.formData();
   const file = form.get("file");
   const courseId = cleanString(form.get("courseId")) || undefined;
@@ -444,9 +473,15 @@ async function importHomeworkPdf(ctx: any, req: Request): Promise<Response> {
   if (file.size > MAX_PDF_BYTES) {
     throw httpError(413, "PDF is too large to import.");
   }
+  return {
+    fileName: file.name || "homework.pdf",
+    courseId,
+    pdfBase64: toBase64(await file.arrayBuffer()),
+  };
+}
 
-  const fileName = file.name || "homework.pdf";
-  const pdfBase64 = toBase64(await file.arrayBuffer());
+async function importHomeworkPdf(ctx: any, req: Request): Promise<Response> {
+  const { fileName, courseId, pdfBase64 } = await readPdfUpload(req);
   const extracted = await extractQuestionsFromPdf(ctx, pdfBase64, fileName);
   const now = new Date().toISOString();
   const homeworkId = `pdf-${slugify(fileName)}-${Date.now().toString(36)}`;

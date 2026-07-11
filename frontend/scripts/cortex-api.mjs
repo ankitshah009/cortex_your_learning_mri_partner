@@ -137,23 +137,44 @@ function createCourse(input) {
 
 async function importHomeworkPdf(req) {
   requireApiKey();
-  const request = await toWebRequest(req);
-  const form = await request.formData();
-  const file = form.get("file");
-  const courseId = cleanString(form.get("courseId")) || undefined;
+  // Same dual contract as the deployed function: JSON with client-side
+  // base64 (primary — the frontend sends this), multipart as fallback.
+  let bytes;
+  let fileName;
+  let courseId;
+  if ((req.headers["content-type"] || "").includes("application/json")) {
+    const body = await readJson(req);
+    const raw =
+      typeof body.pdfBase64 === "string"
+        ? body.pdfBase64.replace(/^data:application\/pdf;base64,/, "")
+        : "";
+    if (!raw) throw httpError(400, "Expected a base64 PDF in 'pdfBase64'.");
+    if (!raw.startsWith("JVBER")) {
+      throw httpError(400, "That file does not look like a PDF.");
+    }
+    bytes = Buffer.from(raw, "base64");
+    fileName = cleanString(body.fileName) || "homework.pdf";
+    courseId = cleanString(body.courseId) || undefined;
+  } else {
+    const request = await toWebRequest(req);
+    const form = await request.formData();
+    const file = form.get("file");
+    courseId = cleanString(form.get("courseId")) || undefined;
 
-  if (!file || typeof file === "string") {
-    throw httpError(400, "Expected a PDF file field named 'file'.");
+    if (!file || typeof file === "string") {
+      throw httpError(400, "Expected a PDF file field named 'file'.");
+    }
+    if (file.type && file.type !== "application/pdf") {
+      throw httpError(400, "Please upload a PDF file.");
+    }
+    bytes = Buffer.from(await file.arrayBuffer());
+    fileName = file.name || "homework.pdf";
   }
-  if (file.type && file.type !== "application/pdf") {
-    throw httpError(400, "Please upload a PDF file.");
-  }
-  if (file.size > MAX_PDF_BYTES) {
+  if (bytes.length > MAX_PDF_BYTES) {
     throw httpError(413, "PDF is too large for this dev importer.");
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const extracted = await extractQuestionsFromPdf(bytes, file.name || "homework.pdf");
+  const extracted = await extractQuestionsFromPdf(bytes, fileName);
   const learningContext = await findLearningContext({
     mainTopic: extracted.mainTopic,
     title: extracted.title,
@@ -161,7 +182,7 @@ async function importHomeworkPdf(req) {
     searchQuery: extracted.searchQuery,
   });
   const now = new Date().toISOString();
-  const homeworkId = `pdf-${slugify(file.name || "homework")}-${Date.now().toString(36)}`;
+  const homeworkId = `pdf-${slugify(fileName || "homework")}-${Date.now().toString(36)}`;
 
   const problems = extracted.questions.slice(0, 12).map((q, index) => {
     const problemId = `${homeworkId}-q${index + 1}`;
@@ -174,7 +195,7 @@ async function importHomeworkPdf(req) {
       statement: q.statement,
       sampleReasoning: q.sampleReasoning || "",
       source: "pdf",
-      sourceLabel: file.name || "Uploaded PDF",
+      sourceLabel: fileName || "Uploaded PDF",
       learningContext,
     };
   });
@@ -185,14 +206,14 @@ async function importHomeworkPdf(req) {
 
   const homework = {
     id: homeworkId,
-    title: extracted.title || stripPdfExtension(file.name) || "Imported Homework",
+    title: extracted.title || stripPdfExtension(fileName) || "Imported Homework",
     emoji: "📄",
     subject: extracted.subject || "Homework",
     due: "Imported today",
     problemIds: problems.map((p) => p.id),
     courseId,
     source: "pdf",
-    sourceFileName: file.name || "homework.pdf",
+    sourceFileName: fileName || "homework.pdf",
     importedAt: now,
     learningContext,
   };

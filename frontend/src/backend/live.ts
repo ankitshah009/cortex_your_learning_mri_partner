@@ -58,6 +58,21 @@ function saveImportedLibrary(library: HomeworkLibrary) {
 }
 
 /**
+ * The PDF is base64'd in the browser and sent as JSON because the edge
+ * runtime's multipart parser corrupts binary bodies (non-ASCII bytes in the
+ * PDF's compressed streams get text-decoded, so Anthropic rejects the file).
+ */
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+/**
  * Provenance of a Diagnosis returned by the live provider, so the judge
  * panel can be honest about where the data came from. Unset means the
  * provider ran in mock-only mode (no live endpoint configured).
@@ -178,13 +193,14 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
         return mockProvider.importHomeworkPdf(file, targetCourseId);
       }
 
-      const form = new FormData();
-      form.append("file", file);
-      form.append("courseId", targetCourseId);
-
       const res = await fetch(apiUrl("/api/homeworks/import-pdf"), {
         method: "POST",
-        body: form,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          fileName: file.name || "homework.pdf",
+          courseId: targetCourseId,
+          pdfBase64: await fileToBase64(file),
+        }),
       });
       if (!res.ok) {
         const message = await res.text();
