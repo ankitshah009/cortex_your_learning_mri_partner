@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Completions, Outcome } from "../scenarios/homework";
-import type { UnderstandingSignal } from "../scenarios/types";
+import type {
+  BrainCheckRecord,
+  UnderstandingSignal,
+} from "../scenarios/types";
 
 export interface Profile {
   name: string;
@@ -14,6 +17,7 @@ interface AppState {
   completedProblems: Completions;
   /** problemId -> accumulated understanding evidence */
   understandingByProblem: Record<string, UnderstandingState>;
+  brainCheckHistory: BrainCheckRecord[];
   resetLearningProgress: () => void;
   setProfile: (p: Profile) => void;
   markCompleted: (problemId: string, outcome: Outcome) => void;
@@ -21,6 +25,7 @@ interface AppState {
     problemId: string,
     signal: Omit<UnderstandingSignal, "id" | "problemId" | "createdAt">,
   ) => void;
+  recordBrainCheck: (record: BrainCheckRecord) => void;
 }
 
 export interface UnderstandingState {
@@ -41,8 +46,13 @@ export const useApp = create<AppState>()(
       profile: null,
       completedProblems: {},
       understandingByProblem: {},
+      brainCheckHistory: [],
       resetLearningProgress: () =>
-        set({ completedProblems: {}, understandingByProblem: {} }),
+        set({
+          completedProblems: {},
+          understandingByProblem: {},
+          brainCheckHistory: [],
+        }),
       setProfile: (profile) => set({ profile }),
       markCompleted: (problemId, outcome) =>
         set((s) => ({
@@ -81,6 +91,15 @@ export const useApp = create<AppState>()(
             },
           };
         }),
+      recordBrainCheck: (record) =>
+        set((s) => ({
+          brainCheckHistory: [record, ...s.brainCheckHistory]
+            .filter(
+              (item, index, all) =>
+                all.findIndex((candidate) => candidate.id === item.id) === index,
+            )
+            .slice(0, 24),
+        })),
     }),
     { name: "cortex-app" },
   ),

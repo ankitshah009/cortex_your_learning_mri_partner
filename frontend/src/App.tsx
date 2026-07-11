@@ -5,6 +5,7 @@ import { LandingPage } from "./app/LandingPage";
 import { CoursePage } from "./app/CoursePage";
 import { HomeworkPage } from "./app/HomeworkPage";
 import { SolvePage } from "./app/SolvePage";
+import { BrainCheckPage } from "./app/BrainCheckPage";
 import { JudgeMode } from "./components/judge/JudgePanel";
 
 /**
@@ -36,6 +37,7 @@ export function App() {
         <Route path="/course/:courseId" element={<CoursePage />} />
         <Route path="/homework/:homeworkId" element={<HomeworkPage />} />
         <Route path="/solve/:problemId" element={<SolvePage />} />
+        <Route path="/brain-check" element={<BrainCheckPage />} />
       </Routes>
       {/* Judge mode: press J anywhere to see the live diagnostic engine output */}
       <JudgeMode />

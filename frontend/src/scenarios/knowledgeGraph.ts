@@ -103,11 +103,24 @@ export function buildCourseGraph(
 
       const understanding = understandingByProblem[pid];
       if (understanding) {
-        acc.understandingTotal += understanding.score;
+        // Mastery is evidence-weighted: opening a lesson or attempting a
+        // problem matters, but independent transfer must move the model most.
+        // This prevents interaction volume from masquerading as understanding.
+        // Signals persisted before evidence classes were introduced keep their
+        // established aggregate score for backward compatibility.
+        const hasClassifiedEvidence = understanding.signals.some(
+          (signal) => signal.evidenceClass !== undefined,
+        );
+        const evidenceScore = hasClassifiedEvidence
+          ? understanding.signals.reduce(
+              (sum, signal) => sum + signal.delta * evidenceWeight(signal),
+              0,
+            )
+          : understanding.score;
+        acc.understandingTotal += Math.min(100, evidenceScore);
         const inferredBaseline = Math.max(
           0,
-          understanding.score -
-            understanding.signals.reduce((sum, signal) => sum + signal.delta, 0),
+          understanding.score - understanding.signals.reduce((sum, signal) => sum + signal.delta, 0),
         );
         acc.baselineTotal +=
           understanding.baselineScore ?? inferredBaseline;
@@ -189,6 +202,29 @@ export function buildCourseGraph(
   });
 
   return { nodes, edges };
+}
+
+function evidenceWeight(
+  signal: UnderstandingState["signals"][number],
+) {
+  if (signal.evidenceClass === "delayed_transfer") return 1.2;
+  if (signal.evidenceClass === "immediate_transfer") return 1;
+  if (signal.evidenceClass === "guided_success") return 0.45;
+  if (signal.evidenceClass === "exposure") return 0.15;
+  switch (signal.kind) {
+    case "transfer":
+      return 0.9;
+    case "probe_answer":
+      return 0.45;
+    case "student_question":
+      return 0.3;
+    case "lesson_reflection":
+      return 0.35;
+    case "attempt":
+      return 0.15;
+    default:
+      return 0.3;
+  }
 }
 
 function recencyWeight(lastPracticedAt: string | null) {

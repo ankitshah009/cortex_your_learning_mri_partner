@@ -15,6 +15,10 @@ import {
   makeCourse,
   saveCreatedCourses,
 } from "./courseStore";
+import {
+  createSeededBrainCheck,
+  evaluateSeededBrainCheck,
+} from "../learning/brainCheck";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -164,6 +168,14 @@ export const mockProvider: DataProvider = {
           : "Try explaining the rule in your own words before moving on.",
       evidence: `Student asked: "${question}"`,
     };
+  },
+  async createBrainCheck(input) {
+    await delay(500);
+    return createSeededBrainCheck(input);
+  },
+  async evaluateBrainCheck(input) {
+    await delay(900);
+    return evaluateSeededBrainCheck(input);
   },
   async recordLearningSession(topic, summary, score) {
     console.info("[everos-mock] record_learning_session", {

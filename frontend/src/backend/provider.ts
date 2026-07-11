@@ -11,6 +11,8 @@ import type {
   RepairConversationTurn,
   UnderstandingEvaluation,
   UnderstandingTurnMode,
+  BrainCheckChallenge,
+  BrainCheckEvaluation,
 } from "../scenarios/types";
 
 /**
@@ -51,6 +53,22 @@ export interface DataProvider {
     prompt?: string;
     conversation?: RepairConversationTurn[];
   }): Promise<UnderstandingEvaluation>;
+  /** Generate a novel transfer check from one concept and its evidence trail. */
+  createBrainCheck(input: {
+    course: Course;
+    conceptId: string;
+    conceptLabel: string;
+    anchorProblem: Problem;
+    misconception?: string;
+    evidence: string[];
+    confidence: number;
+  }): Promise<BrainCheckChallenge>;
+  /** Compare the private prediction with the learner's independent reasoning. */
+  evaluateBrainCheck(input: {
+    challenge: BrainCheckChallenge;
+    response: string;
+    daysSinceAnchor: number;
+  }): Promise<BrainCheckEvaluation>;
   /** EverOS: record the repaired session so the brain map grows */
   recordLearningSession(
     topic: string,

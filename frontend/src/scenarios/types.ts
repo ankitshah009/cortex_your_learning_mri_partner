@@ -141,6 +141,8 @@ export interface UnderstandingSignal {
   feedbackToStudent?: string;
   nextPrompt?: string;
   evidence?: string;
+  /** Separates participation from independent proof of transfer. */
+  evidenceClass?: LearningEvidenceClass;
 }
 
 export interface UnderstandingEvaluation {
@@ -211,6 +213,56 @@ export interface HomeworkImportResult {
   homework: Homework;
   problems: Problem[];
   courseId: string;
+}
+
+/* ---------- Predictive brain checks ---------- */
+
+export type LearningEvidenceClass =
+  | "exposure"
+  | "guided_success"
+  | "immediate_transfer"
+  | "delayed_transfer";
+
+export interface BrainCheckPrediction {
+  hypothesis: string;
+  expectedDivergence: string;
+  confidence: number;
+  evidence: string[];
+}
+
+export interface BrainCheckChallenge {
+  id: string;
+  courseId: string;
+  conceptId: string;
+  conceptLabel: string;
+  emoji: string;
+  anchorProblemId: string;
+  title: string;
+  statement: string;
+  answerHint: string;
+  prediction: BrainCheckPrediction;
+}
+
+export interface BrainCheckEvaluation {
+  outcome: "confirmed" | "revised" | "uncertain";
+  correct: boolean;
+  confidence: number;
+  observedReasoning: string;
+  feedback: string;
+  modelUpdate: string;
+  nextReviewDays: number;
+  evidenceClass: Extract<
+    LearningEvidenceClass,
+    "immediate_transfer" | "delayed_transfer"
+  >;
+}
+
+export interface BrainCheckRecord {
+  id: string;
+  challenge: BrainCheckChallenge;
+  response: string;
+  evaluation: BrainCheckEvaluation;
+  completedAt: string;
 }
 
 export interface CreateCourseInput {

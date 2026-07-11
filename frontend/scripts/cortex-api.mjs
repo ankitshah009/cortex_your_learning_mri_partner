@@ -89,6 +89,14 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, await evaluateStudentQuestion(await readJson(req)));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/brain-check") {
+      return sendJson(res, 200, await createBrainCheck(await readJson(req)));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/brain-check/evaluate") {
+      return sendJson(res, 200, await evaluateBrainCheck(await readJson(req)));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/sessions") {
       sessions.push({ ...(await readJson(req)), recordedAt: new Date().toISOString() });
       return sendJson(res, 200, { ok: true });
@@ -283,6 +291,114 @@ async function evaluateStudentQuestion(input) {
   });
 
   return normalizeQuestionEvaluation(evaluation);
+}
+
+async function createBrainCheck(input) {
+  requireApiKey();
+  const anchor = input?.anchorProblem;
+  const course = input?.course;
+  const conceptLabel = cleanString(input?.conceptLabel) || "this concept";
+  if (!anchor?.statement || !course?.id) {
+    throw httpError(400, "Missing course or anchor problem for brain check.");
+  }
+  const generated = await askClaudeTool({
+    model: REASONING_MODEL,
+    max_tokens: 900,
+    system:
+      "You create short, novel transfer challenges that test a learner model without revealing its private prediction. Respond by calling the provided tool.",
+    tool: BRAIN_CHECK_TOOL,
+    messages: [{
+      role: "user",
+      content: `Create one transfer challenge for ${conceptLabel}.
+
+Earlier problem: ${anchor.title}\n${anchor.statement}
+Suspected misconception: ${cleanString(input.misconception) || "The idea may not transfer to a new context."}
+
+Rules:
+- Change both the surface story and numbers.
+- Test the same underlying relationship, not arithmetic trivia.
+- Make it solvable from the prompt alone in under 90 seconds.
+- Require a short explanation, not only an answer.
+- Keep the statement under 70 words.
+- answerHint must state the correct result and decisive reasoning for evaluation.
+- expectedDivergence must describe the earliest likely wrong inference, without insulting the learner.
+
+Call submit_brain_check.`,
+    }],
+  });
+  return {
+    id: `check-${cleanId(anchor.id)}-${Date.now().toString(36)}`,
+    courseId: course.id,
+    conceptId: cleanConcept(input.conceptId),
+    conceptLabel,
+    emoji: cleanString(generated.emoji) || cleanString(anchor.emoji) || "🧠",
+    anchorProblemId: anchor.id,
+    title: cleanString(generated.title) || `${conceptLabel} brain check`,
+    statement: cleanString(generated.statement),
+    answerHint: cleanString(generated.answerHint),
+    prediction: {
+      hypothesis:
+        cleanString(input.misconception) ||
+        `The ${conceptLabel} rule may not transfer to a new context yet.`,
+      expectedDivergence: cleanString(generated.expectedDivergence),
+      confidence: clampPercent(input.confidence, 64),
+      evidence: normalizeStringList(input.evidence, 3),
+    },
+  };
+}
+
+async function evaluateBrainCheck(input) {
+  requireApiKey();
+  const challenge = input?.challenge;
+  const response = cleanString(input?.response);
+  if (!challenge?.statement || response.length < 8) {
+    throw httpError(400, "Missing brain-check challenge or learner reasoning.");
+  }
+  const generated = await askClaudeTool({
+    model: REASONING_MODEL,
+    max_tokens: 900,
+    system:
+      "You compare a private learning prediction with independent transfer evidence. Be conservative, evidence-based, and respond by calling the provided tool.",
+    tool: BRAIN_CHECK_EVALUATION_TOOL,
+    messages: [{
+      role: "user",
+      content: `Evaluate this independent transfer check.
+
+Challenge: ${challenge.statement}
+Evaluator answer guide: ${challenge.answerHint}
+Private prediction: ${challenge.prediction?.hypothesis}
+Expected first divergence: ${challenge.prediction?.expectedDivergence}
+Learner response: ${response}
+Days since anchor evidence: ${Number(input.daysSinceAnchor) || 0}
+
+Rules:
+- correct requires both a sound conclusion and reasoning that supports it.
+- outcome is confirmed only when the response demonstrates the predicted divergence.
+- outcome is revised when the learner independently transfers the concept, contradicting the prediction.
+- otherwise use uncertain.
+- evidenceClass is delayed_transfer when daysSinceAnchor >= 2, otherwise immediate_transfer.
+- nextReviewDays: 1-2 for confirmed/uncertain, 5-14 for revised.
+- observedReasoning must describe evidence in the response, not a personality trait.
+
+Call submit_brain_check_evaluation.`,
+    }],
+  });
+  const outcome = ["confirmed", "revised", "uncertain"].includes(generated.outcome)
+    ? generated.outcome
+    : "uncertain";
+  return {
+    outcome,
+    correct: Boolean(generated.correct),
+    confidence: clampPercent(generated.confidence, 65),
+    observedReasoning: cleanString(generated.observedReasoning),
+    feedback: cleanString(generated.feedback),
+    modelUpdate: cleanString(generated.modelUpdate),
+    nextReviewDays: Math.max(1, Math.min(30, Math.round(Number(generated.nextReviewDays) || 2))),
+    evidenceClass:
+      generated.evidenceClass === "delayed_transfer"
+        ? "delayed_transfer"
+        : "immediate_transfer",
+  };
 }
 
 async function extractQuestionsFromPdf(pdfBytes, fileName) {
@@ -835,6 +951,55 @@ const QUESTION_EVALUATION_TOOL = {
         type: "string",
         description:
           "Why this question is evidence of the selected understanding depth.",
+      },
+    },
+  },
+};
+
+const BRAIN_CHECK_TOOL = {
+  name: "submit_brain_check",
+  description: "Create one novel transfer challenge and its private evaluator guide.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["title", "emoji", "statement", "answerHint", "expectedDivergence"],
+    properties: {
+      title: { type: "string" },
+      emoji: { type: "string" },
+      statement: { type: "string" },
+      answerHint: { type: "string" },
+      expectedDivergence: { type: "string" },
+    },
+  },
+};
+
+const BRAIN_CHECK_EVALUATION_TOOL = {
+  name: "submit_brain_check_evaluation",
+  description: "Compare a private prediction with a learner's independent transfer evidence.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "outcome",
+      "correct",
+      "confidence",
+      "observedReasoning",
+      "feedback",
+      "modelUpdate",
+      "nextReviewDays",
+      "evidenceClass",
+    ],
+    properties: {
+      outcome: { type: "string", enum: ["confirmed", "revised", "uncertain"] },
+      correct: { type: "boolean" },
+      confidence: { type: "number", minimum: 0, maximum: 100 },
+      observedReasoning: { type: "string" },
+      feedback: { type: "string" },
+      modelUpdate: { type: "string" },
+      nextReviewDays: { type: "number", minimum: 1, maximum: 30 },
+      evidenceClass: {
+        type: "string",
+        enum: ["immediate_transfer", "delayed_transfer"],
       },
     },
   },

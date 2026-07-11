@@ -1,4 +1,6 @@
 import type {
+  BrainCheckChallenge,
+  BrainCheckEvaluation,
   Course,
   Diagnosis,
   HomeworkImportResult,
@@ -262,6 +264,36 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       } catch (err) {
         console.warn("[live] evaluate-question failed, using local heuristic", err);
         return mockProvider.evaluateStudentQuestion(input);
+      }
+    },
+    async createBrainCheck(input): Promise<BrainCheckChallenge> {
+      if (!apiBaseUrl) return mockProvider.createBrainCheck(input);
+      try {
+        const res = await fetch(`${apiBaseUrl}/api/brain-check`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) throw new Error(`brain-check returned ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn("[live] brain check generation failed, using local challenge", err);
+        return mockProvider.createBrainCheck(input);
+      }
+    },
+    async evaluateBrainCheck(input): Promise<BrainCheckEvaluation> {
+      if (!apiBaseUrl) return mockProvider.evaluateBrainCheck(input);
+      try {
+        const res = await fetch(`${apiBaseUrl}/api/brain-check/evaluate`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) throw new Error(`brain-check/evaluate returned ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn("[live] brain check evaluation failed, using local evaluator", err);
+        return mockProvider.evaluateBrainCheck(input);
       }
     },
     async recordLearningSession(topic, summary, score) {

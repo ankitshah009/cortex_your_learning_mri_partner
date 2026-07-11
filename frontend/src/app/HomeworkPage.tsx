@@ -11,6 +11,7 @@ import { useHomeworkLibrary } from "../backend/useHomeworkLibrary";
 import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
+import { BrandLogo } from "../components/brand/BrandLogo";
 
 export function HomeworkPage() {
   const { homeworkId } = useParams<{ homeworkId: string }>();
@@ -53,12 +54,15 @@ export function HomeworkPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <header className="flex items-center justify-between">
-        <Link
-          to={backTo}
-          className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
-        >
-          ← Back to course
-        </Link>
+        <div className="flex items-center gap-4">
+          <BrandLogo size="sm" linked className="hidden sm:block" />
+          <Link
+            to={backTo}
+            className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
+          >
+            ← Back to course
+          </Link>
+        </div>
         <span className="rounded-full border-[3px] border-ink/10 bg-white px-4 py-1.5 font-display text-sm font-extrabold text-ink-soft">
           {hw.subject} · {hw.due}
         </span>

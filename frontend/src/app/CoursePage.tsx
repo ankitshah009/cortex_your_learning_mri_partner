@@ -18,6 +18,7 @@ import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
 import { ConceptChat } from "../components/concept-chat/ConceptChat";
+import { BrandLogo } from "../components/brand/BrandLogo";
 
 export function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -91,12 +92,15 @@ export function CoursePage() {
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <header className="flex items-center justify-between gap-3">
-        <Link
-          to="/"
-          className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
-        >
-          ← My courses
-        </Link>
+        <div className="flex items-center gap-4">
+          <BrandLogo size="sm" linked className="hidden sm:block" />
+          <Link
+            to="/"
+            className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
+          >
+            ← My courses
+          </Link>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"

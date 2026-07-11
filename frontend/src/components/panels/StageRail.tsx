@@ -198,6 +198,7 @@ export function StageCard({
                           : "Tested the hunch",
                       delta:
                         opt.kind === "correct" ? 15 : opt.kind === "mixup" ? 5 : 3,
+                      evidenceClass: "guided_success",
                       evidence: `Student chose "${opt.label}" on the diagnostic probe.`,
                     });
                     answerProbe(opt.kind);
@@ -274,6 +275,7 @@ export function StageCard({
                   kind: "lesson_reflection",
                   label: "Studied tiny fix",
                   delta: 6,
+                  evidenceClass: "exposure",
                   evidence:
                     "Student reviewed the targeted lesson before entering the repair lab.",
                 });
@@ -398,6 +400,7 @@ function RepairLab({
         kind: opening.kind,
         label: opening.signalLabel,
         delta: result.understandingDelta,
+        evidenceClass: "guided_success",
         depth: result.depth,
         feedbackToStudent: result.feedbackToStudent,
         nextPrompt:

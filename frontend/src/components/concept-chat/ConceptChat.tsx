@@ -251,6 +251,7 @@ export function ConceptChat({
           ? `Brain check: ${node.label}`
           : `Asked about ${node.label}`,
         delta: result.understandingDelta,
+        evidenceClass: pendingPrompt ? "immediate_transfer" : "exposure",
         depth: result.depth,
         feedbackToStudent: result.feedbackToStudent,
         evidence: result.evidence,

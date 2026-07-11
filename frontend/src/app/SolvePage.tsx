@@ -18,6 +18,7 @@ import {
   READING_WAIT_LINES,
 } from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
+import { BrandLogo } from "../components/brand/BrandLogo";
 
 /** Remounts the scan for every problem so all state starts fresh */
 export function SolvePage() {
@@ -58,6 +59,7 @@ function SolveScan({ problemId }: { problemId: string }) {
       kind: "attempt",
       label: "Tried the problem",
       delta: 20,
+      evidenceClass: "exposure",
       evidence: "Student submitted an answer with reasoning.",
     });
     try {
@@ -104,6 +106,7 @@ function SolveScan({ problemId }: { problemId: string }) {
         kind: diagnosis.mixup ? "lesson_reflection" : "transfer",
         label: diagnosis.mixup ? "Completed repair loop" : "Solid reasoning",
         delta: diagnosis.mixup ? 12 : 24,
+        evidenceClass: diagnosis.mixup ? "guided_success" : "immediate_transfer",
         evidence: diagnosis.mixup
           ? "Student completed the scan after a diagnosed mix-up."
           : "Student reasoning was solid on the first scan.",
@@ -209,12 +212,15 @@ function TopBar({
   const pos = problemPosition(problem.id, library);
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b-[3px] border-ink/5 bg-white px-5">
-      <Link
-        to={pos ? `/homework/${pos.homework.id}` : "/"}
-        className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
-      >
-        ← {pos ? pos.homework.title : "My brain"}
-      </Link>
+      <div className="flex min-w-0 items-center gap-3">
+        <BrandLogo size="sm" linked className="hidden xl:block" />
+        <Link
+          to={pos ? `/homework/${pos.homework.id}` : "/"}
+          className="max-w-52 truncate font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
+        >
+          ← {pos ? pos.homework.title : "My brain"}
+        </Link>
+      </div>
       <span className="font-display text-xl font-extrabold">
         {pos
           ? `Problem ${pos.index} of ${pos.total} 🫧`

@@ -16,6 +16,8 @@ import { BrainGraph } from "../components/brain-3d/LazyBrainGraph";
 import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
+import { selectBrainCheckTarget } from "../learning/brainCheck";
+import { BrandLogo } from "../components/brand/BrandLogo";
 
 const AVATARS = ["🦊", "🐙", "🦖", "🐼"];
 const COURSE_EMOJI = ["🧮", "🔬", "📖", "🌍", "🎨", "🎵", "💻", "⚗️"];
@@ -27,6 +29,7 @@ export function HomePage() {
   const profile = useApp((s) => s.profile);
   const completedProblems = useApp((s) => s.completedProblems);
   const understandingByProblem = useApp((s) => s.understandingByProblem);
+  const brainCheckHistory = useApp((s) => s.brainCheckHistory);
   const { courses, library, loading, error, createCourse, refresh } =
     useCourses();
 
@@ -44,6 +47,12 @@ export function HomePage() {
       ),
     [courses, library, completedProblems, understandingByProblem],
   );
+  const brainCheckTarget = selectBrainCheckTarget(
+    library,
+    completedProblems,
+    understandingByProblem,
+  );
+  const latestCheck = brainCheckHistory[0];
 
   const totalConnections = useMemo(() => {
     let sum = 0;
@@ -56,7 +65,7 @@ export function HomePage() {
   return (
     <div className="mx-auto max-w-6xl px-6 py-8">
       <header className="flex items-center justify-between">
-        <p className="font-display text-2xl font-extrabold">Cortex 🧠</p>
+        <BrandLogo linked />
         <span className="rounded-full border-[3px] border-ink/10 bg-white px-4 py-1.5 font-display font-extrabold">
           {profile.avatar} {profile.name}
         </span>
@@ -78,6 +87,43 @@ export function HomePage() {
           </p>
         </div>
       </motion.div>
+
+      {brainCheckTarget && (
+        <motion.section
+          initial={{ opacity: 0, y: 18 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="relative mt-7 overflow-hidden rounded-[2rem] border-[3px] border-ink/10 bg-ink p-6 text-white shadow-[0_7px_0_rgba(63,46,86,0.14)] md:p-7"
+        >
+          <div className="absolute -right-12 -top-16 h-56 w-56 rounded-full bg-lav/20" />
+          <div className="relative grid items-center gap-5 md:grid-cols-[1fr_auto]">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-teal anim-pulse-ring" />
+                <p className="font-display text-sm font-extrabold text-teal-soft">
+                  Cora’s next-best question
+                </p>
+              </div>
+              <h2 className="mt-2 max-w-2xl font-display text-3xl font-extrabold leading-tight">
+                I found a weak link worth testing—not another random problem.
+              </h2>
+              <p className="mt-2 max-w-[62ch] text-sm font-semibold leading-relaxed text-white/70">
+                A private prediction is ready for {brainCheckTarget.node.label}. Answer one fresh problem, then see whether Cortex called your reasoning correctly.
+              </p>
+              {latestCheck && (
+                <p className="mt-3 font-display text-xs font-extrabold text-lav-soft">
+                  Last check: {latestCheck.evaluation.outcome} · next review in {latestCheck.evaluation.nextReviewDays} days
+                </p>
+              )}
+            </div>
+            <Link to="/brain-check" className="block">
+              <ChunkyButton variant="teal" className="w-full whitespace-nowrap md:w-auto">
+                Take brain check
+              </ChunkyButton>
+            </Link>
+          </div>
+        </motion.section>
+      )}
 
       <section className="mt-8">
         <div className="flex items-center justify-between gap-4">
@@ -364,6 +410,9 @@ function WelcomeScreen() {
         transition={{ type: "spring", stiffness: 200, damping: 20 }}
         className="w-full max-w-md"
       >
+        <div className="mb-5 flex justify-center">
+          <BrandLogo size="lg" linked />
+        </div>
         <div className="flex justify-center">
           <Cora expression="excited" size={140} />
         </div>
