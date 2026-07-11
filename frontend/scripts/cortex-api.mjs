@@ -425,7 +425,8 @@ Call submit_brain_check_evaluation.`,
 async function extractQuestionsFromPdf(pdfBytes, fileName) {
   const data = await askClaudeTool({
     model: EXTRACTION_MODEL,
-    max_tokens: 2400,
+    // Dense worksheets: 12 full questions can overflow 2400 output tokens.
+    max_tokens: 6000,
     system: EXTRACTION_SYSTEM_PROMPT,
     tool: EXTRACTION_TOOL,
     messages: [
