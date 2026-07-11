@@ -1,0 +1,130 @@
+name: Deploy to Butterbase
+
+# Deploys the Cortex app to Butterbase on every push to main:
+#   - functions/analyze  -> serverless function (Butterbase CLI)
+#   - frontend/          -> static site at https://cortex.butterbase.dev (REST deploy flow)
+#
+# Required repo configuration (Settings -> Secrets and variables -> Actions):
+#   secret BUTTERBASE_API_KEY   bb_sk_* key for the account that owns the app
+#   variable BUTTERBASE_APP_ID  e.g. app_zqxy9ay6v4jw
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - "functions/**"
+      - ".github/workflows/deploy-butterbase.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: butterbase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-function:
+    name: Deploy analyze function
+    runs-on: ubuntu-latest
+    env:
+      BUTTERBASE_API_KEY: ${{ secrets.BUTTERBASE_API_KEY }}
+      APP_ID: ${{ vars.BUTTERBASE_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Butterbase CLI
+        run: npm install -g @butterbase/cli
+
+      - name: Deploy analyze function
+        run: butterbase functions deploy functions/analyze/index.ts --name analyze --app "$APP_ID"
+
+      - name: Smoke-test the deployed function
+        run: |
+          RESP=$(curl -sS -m 90 -X POST "https://api.butterbase.ai/v1/$APP_ID/fn/analyze" \
+            -H 'content-type: application/json' \
+            -d '{"problemId":"ci-smoke","problem":{"title":"CI smoke","statement":"A car travels 120 miles in two hours. What was its speed exactly one hour into the trip?"},"reasoning":"120 miles in 2 hours is 60 mph, so at one hour it was going 60 mph."}')
+          echo "$RESP" | head -c 400
+          echo "$RESP" | python3 -c "
+          import json,sys
+          d = json.load(sys.stdin)
+          assert isinstance(d.get('steps'), list) and d['steps'], 'no steps in diagnosis'
+          assert 'celebration' in d, 'no celebration in diagnosis'
+          print('\nfunction smoke test passed')"
+
+  deploy-frontend:
+    name: Deploy frontend
+    runs-on: ubuntu-latest
+    needs: deploy-function
+    env:
+      BUTTERBASE_API_KEY: ${{ secrets.BUTTERBASE_API_KEY }}
+      APP_ID: ${{ vars.BUTTERBASE_APP_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install and build
+        working-directory: frontend
+        env:
+          VITE_ANALYZE_URL: https://api.butterbase.ai/v1/${{ vars.BUTTERBASE_APP_ID }}/fn/analyze
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npm run build
+
+      - name: Zip dist (forward-slash paths)
+        working-directory: frontend/dist
+        run: zip -rq ../frontend.zip .
+
+      - name: Create deployment and upload
+        id: deploy
+        working-directory: frontend
+        run: |
+          CREATE=$(curl -sSf -X POST "https://api.butterbase.ai/v1/$APP_ID/frontend/deployments" \
+            -H "Authorization: Bearer $BUTTERBASE_API_KEY" \
+            -H 'content-type: application/json' \
+            -d '{"framework":"react-vite"}')
+          DEPLOYMENT_ID=$(echo "$CREATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          UPLOAD_URL=$(echo "$CREATE" | python3 -c "import json,sys; print(json.load(sys.stdin)['uploadUrl'])")
+          curl -sSf -X PUT "$UPLOAD_URL" -H 'Content-Type: application/zip' --data-binary @frontend.zip
+          curl -sSf -X POST "https://api.butterbase.ai/v1/$APP_ID/frontend/deployments/$DEPLOYMENT_ID/start" \
+            -H "Authorization: Bearer $BUTTERBASE_API_KEY"
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for READY
+        run: |
+          for i in $(seq 1 30); do
+            STATUS=$(curl -sSf "https://api.butterbase.ai/v1/$APP_ID/frontend/deployments/${{ steps.deploy.outputs.deployment_id }}" \
+              -H "Authorization: Bearer $BUTTERBASE_API_KEY" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            echo "status: $STATUS"
+            case "$STATUS" in
+              READY) exit 0 ;;
+              ERROR|CANCELED) exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "timed out waiting for READY" && exit 1
+
+      - name: Verify live site
+        run: |
+          for i in $(seq 1 18); do
+            CODE=$(curl -sS -o /dev/null -w '%{http_code}' https://cortex.butterbase.dev/)
+            ASSET=$(curl -sS https://cortex.butterbase.dev/ | grep -o 'assets/[^"]*\.js' | head -1 || true)
+            if [ "$CODE" = "200" ] && [ -n "$ASSET" ]; then
+              TYPE=$(curl -sS -o /dev/null -w '%{content_type}' "https://cortex.butterbase.dev/$ASSET")
+              case "$TYPE" in application/javascript*|text/javascript*)
+                echo "live site verified ($ASSET, $TYPE)"; exit 0 ;;
+              esac
+            fi
+            echo "waiting for CDN propagation ($i)..."
+            sleep 10
+          done
+          echo "site did not verify in time" && exit 1
