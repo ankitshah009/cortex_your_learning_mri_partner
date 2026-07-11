@@ -27,6 +27,7 @@ function SolveScan({ problemId }: { problemId: string }) {
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
+  const [analyzeFailed, setAnalyzeFailed] = useState(false);
   const [reasoning, setReasoning] = useState("");
   const celebratedRef = useRef(false);
 
@@ -44,9 +45,17 @@ function SolveScan({ problemId }: { problemId: string }) {
   }, [problemId, reset]);
 
   const submit = useCallback(async () => {
+    setAnalyzeFailed(false);
     goTo("reading");
-    const result = await backend.analyzeReasoning(problemId, reasoning);
-    setDiagnosis(result);
+    try {
+      const result = await backend.analyzeReasoning(problemId, reasoning);
+      setDiagnosis(result);
+    } catch (err) {
+      // Custom problems have no seeded fallback, so a live failure lands
+      // here; seeded problems never do (live.ts falls back silently).
+      console.warn("[solve] analyze failed", err);
+      setAnalyzeFailed(true);
+    }
   }, [goTo, problemId, reasoning]);
 
   // Auto-advance the cinematic opening. A solid path (no mix-up) skips the
@@ -122,6 +131,14 @@ function SolveScan({ problemId }: { problemId: string }) {
           <div className="relative min-w-0 flex-1">
             {diagnosis ? (
               <PathCanvas diagnosis={diagnosis} />
+            ) : analyzeFailed ? (
+              <AnalyzeFailed
+                onRetry={submit}
+                onBack={() => {
+                  setAnalyzeFailed(false);
+                  reset();
+                }}
+              />
             ) : (
               <ReadingOverlay />
             )}
@@ -252,6 +269,35 @@ function ReadingOverlay() {
         >
           Cora is reading your thinking...
         </motion.p>
+      </div>
+    </div>
+  );
+}
+
+function AnalyzeFailed({
+  onRetry,
+  onBack,
+}: {
+  onRetry: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="flex max-w-sm flex-col items-center text-center">
+        <Cora expression="thinking" size={140} />
+        <p className="mt-4 font-display text-xl font-extrabold">
+          My scanner glitched! 🔌
+        </p>
+        <p className="mt-2 text-sm font-semibold text-ink-soft">
+          I couldn't finish reading your thinking. Let's give it another go —
+          your words are still here.
+        </p>
+        <div className="mt-4 flex gap-2.5">
+          <ChunkyButton onClick={onRetry}>Scan again 🔍</ChunkyButton>
+          <ChunkyButton variant="ghost" onClick={onBack}>
+            Edit my thinking
+          </ChunkyButton>
+        </div>
       </div>
     </div>
   );
