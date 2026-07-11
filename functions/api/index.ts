@@ -14,6 +14,8 @@
  *   {base}?path=/api/analyze               POST { problemId, problem?, reasoning } -> Diagnosis
  *   {base}?path=/api/evaluate-question     POST { question, problem, diagnosis?, currentUnderstanding?, mode?, prompt? }
  *                                               -> { depth, understandingDelta, feedbackToStudent, nextPrompt, evidence }
+ *   {base}?path=/api/brain-check           POST { course, conceptId, conceptLabel, anchorProblem, misconception?, evidence, confidence } -> BrainCheckChallenge
+ *   {base}?path=/api/brain-check/evaluate  POST { challenge, response, daysSinceAnchor } -> BrainCheckEvaluation
  *   {base}?path=/api/sessions              POST { topic, summary, score } -> { ok: true }
  *   {base}?path=/health                    GET                          -> { ok, ... }
  *
@@ -1082,6 +1084,157 @@ async function createConceptBrief(ctx: any, input: any): Promise<Response> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Route: brain-check (predictive transfer challenges)                 */
+/* Ported from the dev server (cortex-api.mjs) so the deployed app     */
+/* generates and judges checks with a real model instead of silently   */
+/* falling back to the local heuristic.                                */
+/* ------------------------------------------------------------------ */
+
+async function createBrainCheck(ctx: any, input: any): Promise<Response> {
+  const anchor = input?.anchorProblem;
+  const course = input?.course;
+  const conceptLabel = cleanString(input?.conceptLabel) || "this concept";
+  if (!anchor?.statement || !course?.id) {
+    throw httpError(400, "Missing course or anchor problem for brain check.");
+  }
+
+  const raw = await chat(
+    ctx,
+    [
+      {
+        role: "system",
+        content:
+          "You create short, novel transfer challenges that test a learner model without revealing its private prediction. Respond with strict JSON only.",
+      },
+      {
+        role: "user",
+        content: `Create one transfer challenge for ${conceptLabel}.
+
+Earlier problem: ${cleanString(anchor.title)}
+${cleanString(anchor.statement)}
+Suspected misconception: ${cleanString(input?.misconception) || "The idea may not transfer to a new context."}
+
+Rules:
+- Change both the surface story and numbers.
+- Test the same underlying relationship, not arithmetic trivia.
+- Make it solvable from the prompt alone in under 90 seconds.
+- Require a short explanation, not only an answer.
+- Keep the statement under 70 words.
+- answerHint must state the correct result and decisive reasoning for evaluation.
+- expectedDivergence must describe the earliest likely wrong inference, without insulting the learner.
+
+Respond with EXACTLY this JSON shape and nothing else:
+{
+  "title": "short challenge name",
+  "emoji": "one emoji",
+  "statement": "the challenge text",
+  "answerHint": "correct result and decisive reasoning",
+  "expectedDivergence": "earliest likely wrong inference"
+}`,
+      },
+    ],
+    // temperature 0.1 matches the dev server's askClaudeTool, so challenge
+    // generation behaves the same locally and in production.
+    { model: ctx.env.MODEL || DEFAULT_REASONING_MODEL, maxTokens: 900, temperature: 0.1 },
+  );
+  const generated = extractJson(raw);
+
+  const statement = cleanString(generated?.statement);
+  // An empty statement is unusable — fail loudly so live.ts falls back.
+  if (!statement) throw httpError(422, "The model did not return a challenge statement.");
+
+  return json(200, {
+    id: `check-${cleanId(anchor.id)}-${Date.now().toString(36)}`,
+    courseId: course.id,
+    conceptId: cleanConcept(input?.conceptId),
+    conceptLabel,
+    emoji: cleanString(generated?.emoji) || cleanString(anchor.emoji) || "🧠",
+    anchorProblemId: anchor.id,
+    title: cleanString(generated?.title) || `${conceptLabel} brain check`,
+    statement,
+    answerHint: cleanString(generated?.answerHint),
+    prediction: {
+      hypothesis:
+        cleanString(input?.misconception) ||
+        `The ${conceptLabel} rule may not transfer to a new context yet.`,
+      expectedDivergence: cleanString(generated?.expectedDivergence),
+      confidence: clampPercent(input?.confidence, 64),
+      evidence: normalizeStringList(input?.evidence, 3),
+    },
+  });
+}
+
+async function evaluateBrainCheck(ctx: any, input: any): Promise<Response> {
+  const challenge = input?.challenge;
+  const response = cleanString(input?.response);
+  if (!challenge?.statement || response.length < 8) {
+    throw httpError(400, "Missing brain-check challenge or learner reasoning.");
+  }
+
+  const raw = await chat(
+    ctx,
+    [
+      {
+        role: "system",
+        content:
+          "You compare a private learning prediction with independent transfer evidence. Be conservative, evidence-based, and respond with strict JSON only.",
+      },
+      {
+        role: "user",
+        content: `Evaluate this independent transfer check.
+
+Challenge: ${cleanString(challenge.statement)}
+Evaluator answer guide: ${cleanString(challenge.answerHint)}
+Private prediction: ${cleanString(challenge.prediction?.hypothesis)}
+Expected first divergence: ${cleanString(challenge.prediction?.expectedDivergence)}
+Learner response: ${response}
+Days since anchor evidence: ${Number(input?.daysSinceAnchor) || 0}
+
+Rules:
+- correct requires both a sound conclusion and reasoning that supports it.
+- outcome is confirmed only when the response demonstrates the predicted divergence.
+- outcome is revised when the learner independently transfers the concept, contradicting the prediction.
+- otherwise use uncertain.
+- evidenceClass is delayed_transfer when daysSinceAnchor >= 2, otherwise immediate_transfer.
+- nextReviewDays: 1-2 for confirmed/uncertain, 5-14 for revised.
+- observedReasoning must describe evidence in the response, not a personality trait.
+
+Respond with EXACTLY this JSON shape and nothing else:
+{
+  "outcome": "confirmed | revised | uncertain",
+  "correct": true,
+  "confidence": 65,
+  "observedReasoning": "evidence seen in the response",
+  "feedback": "kid-friendly feedback",
+  "modelUpdate": "how the learner model changes",
+  "nextReviewDays": 2,
+  "evidenceClass": "immediate_transfer | delayed_transfer"
+}`,
+      },
+    ],
+    { model: ctx.env.MODEL || DEFAULT_REASONING_MODEL, maxTokens: 900, temperature: 0.1 },
+  );
+  const generated = extractJson(raw);
+
+  const outcome = ["confirmed", "revised", "uncertain"].includes(generated?.outcome)
+    ? generated.outcome
+    : "uncertain";
+  return json(200, {
+    outcome,
+    correct: Boolean(generated?.correct),
+    confidence: clampPercent(generated?.confidence, 65),
+    observedReasoning: cleanString(generated?.observedReasoning),
+    feedback: cleanString(generated?.feedback),
+    modelUpdate: cleanString(generated?.modelUpdate),
+    nextReviewDays: Math.max(1, Math.min(30, Math.round(Number(generated?.nextReviewDays) || 2))),
+    evidenceClass:
+      generated?.evidenceClass === "delayed_transfer"
+        ? "delayed_transfer"
+        : "immediate_transfer",
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Route: sessions                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -1113,6 +1266,8 @@ const RATE_LIMITED_ROUTES = new Set([
   "/api/evaluate-question",
   "/api/homeworks/import-pdf",
   "/api/concept-brief",
+  "/api/brain-check",
+  "/api/brain-check/evaluate",
 ]);
 
 export default async function handler(req: Request, ctx: any): Promise<Response> {
@@ -1151,6 +1306,12 @@ export default async function handler(req: Request, ctx: any): Promise<Response>
     }
     if (req.method === "POST" && route === "/api/concept-brief") {
       return await createConceptBrief(ctx, await req.json().catch(() => ({})));
+    }
+    if (req.method === "POST" && route === "/api/brain-check") {
+      return await createBrainCheck(ctx, await req.json().catch(() => ({})));
+    }
+    if (req.method === "POST" && route === "/api/brain-check/evaluate") {
+      return await evaluateBrainCheck(ctx, await req.json().catch(() => ({})));
     }
     if (req.method === "POST" && route === "/api/sessions") {
       return await recordSession(ctx, await req.json().catch(() => ({})));

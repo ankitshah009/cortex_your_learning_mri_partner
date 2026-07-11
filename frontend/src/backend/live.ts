@@ -285,7 +285,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
     async createBrainCheck(input): Promise<BrainCheckChallenge> {
       if (!apiBaseUrl) return mockProvider.createBrainCheck(input);
       try {
-        const res = await fetch(`${apiBaseUrl}/api/brain-check`, {
+        const res = await fetch(apiUrl("/api/brain-check"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
@@ -300,7 +300,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
     async evaluateBrainCheck(input): Promise<BrainCheckEvaluation> {
       if (!apiBaseUrl) return mockProvider.evaluateBrainCheck(input);
       try {
-        const res = await fetch(`${apiBaseUrl}/api/brain-check/evaluate`, {
+        const res = await fetch(apiUrl("/api/brain-check/evaluate"), {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
