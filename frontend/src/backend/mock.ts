@@ -48,15 +48,15 @@ function classifyQuestion(question: string): {
 function classifyTurn({
   question,
   mode,
-  prompt,
 }: {
   question: string;
   mode?: string;
-  prompt?: string;
 }) {
   if (mode !== "cora_prompt_response") return classifyQuestion(question);
 
-  const text = `${prompt ?? ""} ${question}`.toLowerCase();
+  // Score only the student's words — Cora's prompt often contains the very
+  // keywords being matched ("remember", "check") and must not inflate depth.
+  const text = question.toLowerCase();
   if (/\bnext time\b|\bremember\b|\bcheck\b|\brule\b|\bfuture\b/.test(text)) {
     return { depth: "memory_rule" as const, understandingDelta: 30 };
   }
@@ -135,9 +135,9 @@ export const mockProvider: DataProvider = {
     if (!d) throw new Error(`No seeded diagnosis for: ${problemId}`);
     return d;
   },
-  async evaluateStudentQuestion({ question, mode, prompt, conversation = [] }) {
+  async evaluateStudentQuestion({ question, mode, conversation = [] }) {
     await delay(450);
-    const { depth, understandingDelta } = classifyTurn({ question, mode, prompt });
+    const { depth, understandingDelta } = classifyTurn({ question, mode });
     const strong =
       depth === "conceptual_question" ||
       depth === "contrast_question" ||

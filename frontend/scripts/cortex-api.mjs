@@ -1329,19 +1329,6 @@ async function readBuffer(req) {
   return Buffer.concat(chunks);
 }
 
-function parseJsonObject(text) {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fenced) return JSON.parse(fenced[1]);
-    const first = text.indexOf("{");
-    const last = text.lastIndexOf("}");
-    if (first >= 0 && last > first) return JSON.parse(text.slice(first, last + 1));
-    throw httpError(422, "The model did not return valid JSON.");
-  }
-}
-
 function sendJson(res, status, value) {
   send(res, status, JSON.stringify(value), {
     "content-type": "application/json; charset=utf-8",
