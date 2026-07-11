@@ -1,0 +1,94 @@
+Core product loop
+1. Observe
+The learner solves a problem through text, voice, handwriting, or code.
+For the hackathon, support only one primary input mode and one optional secondary mode.
+use typed reasoning as the default and voice as the demo enhancement.
+2. Map
+Cortex decomposes the response into a reasoning graph:
+
+claims
+assumptions
+operations
+dependencies
+confidence signals
+3. Detect
+Cortex marks the first divergence between valid reasoning and flawed reasoning.
+This distinction matters. The final error may appear late, but the misunderstanding usually begins earlier.
+4. Hypothesize
+Cortex proposes the likely misconception:
+The learner is treating “increasing over an interval” as equivalent to “positive derivative at every point.”
+It should clearly label this as a hypothesis, not a fact.
+5. Probe
+Cortex asks one adaptive question designed to confirm or falsify the hypothesis.
+e.g. Can a function be increasing at a point where its derivative is zero?
+The learner answers.
+Cortex then updates its diagnosis.
+6. Prescribe
+Cortex generates the smallest useful next step:
+
+one short explanation
+one visual example
+one targeted practice problem
+one immediate retest
+no need to generate a full personalized curriculum. unnecessary for MVP
+Ankit Parag Shah  [10:19 AM]
+joined #all-cortex-ai-for-education.RachelZ  [10:21 AM]
+==
+Primary use case: Conceptual math reasoning
+The best demo is not basic arithmetic and not a long coding task. It should be a conceptual problem where the final answer is wrong for an understandable reason.
+Recommended topic:
+Average rate of change vs. instantaneous rate of change
+Why this works:
+
+The misconception is easy for judges to understand.
+The reasoning can look superficially plausible.
+Cortex can identify an early conceptual divergence.
+The adaptive probe is naturally compelling.
+The corrective visualization is easy to build.
+Example problem:
+A car travels 120 miles in two hours. What was its speed exactly one hour into the trip?
+Student response:
+The car traveled 120 miles in two hours, so its speed was 60 mph. Therefore, after one hour, it was moving at 60 mph.
+Cortex diagnosis
+
+Cortex probe:
+Suppose the car was stopped for the first hour and traveled all 120 miles during the second hour. Would the average still be 60 mph?
+After the student responds, Cortex updates the diagnosis:
+Prescription:
+Learn: Average vs. instantaneous rate
+Time: 3 minutes
+Then solve one transfer problem.
+
+This is better than a generic calculus graph because the misunderstanding is intuitive even to nontechnical judges
+image.png [10:23 AM]== Why Cortext is a meaningful product & what it solves==
+Imagine you’re learning with ChatGPT today.
+You ask a question. It gives you an answer. If you’re wrong, it explains the solution. If you still don’t understand, it explains it again in a different way.
+But there’s one thing ChatGPT doesn’t really know:
+Why are you confused in the first place?
+That’s actually what great human teachers do. They don’t immediately teach. They first diagnose. They listen to your reasoning, figure out exactly where your thinking went off track, ask a few probing questions, and only then decide what to teach next.That’s the insight behind Cortex.
+We want to build an AI that behaves like an expert teacher, not an answer generator.
+Instead of grading your final answer, Cortex watches your reasoning process. It finds the first point where your understanding breaks, figures out the misconception behind it, verifies that hypothesis with one adaptive question, and then recommends the smallest lesson that gets you unstuck.
+Think of it as an MRI for learning.
+Just like a medical MRI doesn’t treat you first - it diagnoses the root cause - Cortex diagnoses the root misunderstanding before trying to teach.
+The coolest part isn’t that it says you’re wrong. It’s that it can say:
+“You actually understand the first 80% of this concept. The only thing you’re missing is this one mental model, and here’s the evidence.”
+That feels much more like a human tutor.
+For the hackathon, we don’t need to solve all of education. We just need to prove this new interaction.
+The demo is simple.
+A student solves a problem and explains their reasoning.
+Cortex reconstructs the reasoning step by step.
+It highlights the exact moment where the reasoning diverges.
+It generates a hypothesis about the misconception.
+It asks one intelligent follow-up question to confirm or reject that hypothesis.
+Then it delivers one targeted explanation and one practice problem.
+The “magic moment” is that the AI isn’t just answering questions anymore—it is diagnosing how someone learns.
+I also think this is a much bigger opportunity than a tutoring app.
+Every education product today - ChatGPT, Khanmigo, Duolingo, coding interview platforms, online courses - focuses on delivering content.
+Cortex could become the diagnostic layer underneath all of them. @Ankit Parag Shah @Phong Cao Thanh 
+Instead of asking “What should we teach next?“, they could ask Cortex, “What misunderstanding should we fix next?”
+That’s a fundamentally different way to personalize learning.
+For a hackathon, I think this checks all the boxes.
+The problem is easy to understand.
+The demo is visually compelling.
+The AI behavior feels genuinely new instead of being another chatbot.And even if the MVP is small, people can immediately imagine where it could go. (edited) 
+Message all-cortex-ai-for-education

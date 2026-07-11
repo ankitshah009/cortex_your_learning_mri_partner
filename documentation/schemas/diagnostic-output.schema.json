@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cortex.example/schemas/diagnostic-output.schema.json",
+  "title": "Cortex Diagnostic Output",
+  "type": "object",
+  "required": [
+    "reasoning_nodes",
+    "reasoning_edges",
+    "first_divergence_node_id",
+    "hypothesis",
+    "probe"
+  ],
+  "properties": {
+    "reasoning_nodes": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "sequence",
+          "type",
+          "text",
+          "evidence_excerpt",
+          "depends_on",
+          "status",
+          "explanation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "enum": [
+              "claim",
+              "operation",
+              "assumption",
+              "conclusion"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "evidence_excerpt": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "enum": [
+              "supported",
+              "uncertain",
+              "first_divergence",
+              "downstream"
+            ]
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 320
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reasoning_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source",
+          "target"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "first_divergence_node_id": {
+      "type": "string"
+    },
+    "hypothesis": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "statement",
+        "confidence",
+        "evidence_node_ids",
+        "alternatives"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "statement": {
+          "type": "string",
+          "maxLength": 280
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence_node_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "probe": {
+      "type": "object",
+      "required": [
+        "question",
+        "purpose",
+        "confirms_when",
+        "weakens_when"
+      ],
+      "properties": {
+        "question": {
+          "type": "string",
+          "maxLength": 360
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "confirms_when": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "weakens_when": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+Product name - Cortex
+Primary tagline
+See where understanding breaks.
+This is stronger than “See how students think” because it is precise, active, and tied directly to the product’s job.
+Secondary line:
+Cortex traces a learner’s reasoning, tests its diagnosis, and finds the smallest intervention that unlocks progress.
+One-sentence value proposition
+Cortex is an AI learning diagnostic that identifies the first point where a learner’s reasoning breaks, verifies the underlying misconception through adaptive questioning, and generates the next best learning step.Product thesis
+Most learning tools evaluate the final answer. AI tutors often skip directly to explanation.
+Cortex does something different: it diagnoses before it teaches.
+It observes the learner’s reasoning, converts it into a structured map of claims and dependencies, detects the earliest divergence, forms a misconception hypothesis, and asks a targeted question to verify whether that hypothesis is correct.
+The output is not “right” or “wrong.”
+The output is:
+
+ Here is where your reasoning changed direction.
+ Here is what you likely believe.
+ Here is the question that proves it.
+ Here is the smallest lesson that fixes it.
+image.png
