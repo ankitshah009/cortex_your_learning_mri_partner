@@ -4,9 +4,10 @@ import {
   getHomework,
   homeworkProgress,
   firstUnfinished,
-  PROBLEMS,
+  courseForHomework,
 } from "../scenarios/homework";
 import { useApp } from "../state/store";
+import { useHomeworkLibrary } from "../backend/useHomeworkLibrary";
 import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
@@ -14,7 +15,18 @@ import { ChunkyButton } from "../components/ui/ChunkyButton";
 export function HomeworkPage() {
   const { homeworkId } = useParams<{ homeworkId: string }>();
   const completed = useApp((s) => s.completedProblems);
-  const hw = homeworkId ? getHomework(homeworkId) : undefined;
+  const { library, loading } = useHomeworkLibrary();
+  const hw = homeworkId ? getHomework(homeworkId, library) : undefined;
+
+  if (loading) {
+    return (
+      <div className="flex min-h-dvh items-center justify-center p-6">
+        <p className="font-display text-2xl font-extrabold text-ink-soft">
+          Loading homework...
+        </p>
+      </div>
+    );
+  }
 
   if (!hw) {
     return (
@@ -31,17 +43,21 @@ export function HomeworkPage() {
   }
 
   const { done, total } = homeworkProgress(hw, completed);
-  const nextUp = firstUnfinished(hw, completed);
+  const nextUp = firstUnfinished(hw, completed, library);
   const allDone = !nextUp;
+  const course = hw.courseId
+    ? { id: hw.courseId }
+    : courseForHomework(hw.id, library);
+  const backTo = course ? `/course/${course.id}` : "/";
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <header className="flex items-center justify-between">
         <Link
-          to="/"
+          to={backTo}
           className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
         >
-          ← My brain
+          ← Back to course
         </Link>
         <span className="rounded-full border-[3px] border-ink/10 bg-white px-4 py-1.5 font-display text-sm font-extrabold text-ink-soft">
           {hw.subject} · {hw.due}
@@ -74,7 +90,8 @@ export function HomeworkPage() {
 
       <div className="mt-6 flex flex-col gap-3">
         {hw.problemIds.map((pid, i) => {
-          const p = PROBLEMS[pid];
+          const p = library.problems[pid];
+          if (!p) return null;
           const outcome = completed[pid];
           return (
             <motion.div
@@ -116,7 +133,7 @@ export function HomeworkPage() {
         </div>
         <div className="mb-4 ml-auto">
           {allDone ? (
-            <Link to="/">
+            <Link to={backTo}>
               <ChunkyButton variant="teal">See my brain grow 🧠</ChunkyButton>
             </Link>
           ) : (

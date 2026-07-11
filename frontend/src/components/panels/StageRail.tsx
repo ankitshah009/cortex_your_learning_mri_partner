@@ -1,7 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router-dom";
-import type { Diagnosis, Problem } from "../../scenarios/types";
-import { nextProblemAfter, homeworkForProblem } from "../../scenarios/homework";
+import type { Diagnosis, HomeworkLibrary, Problem } from "../../scenarios/types";
+import {
+  nextProblemAfter,
+  homeworkForProblem,
+  SEEDED_LIBRARY,
+} from "../../scenarios/homework";
 import { useApp } from "../../state/store";
 import { useStage, type Stage } from "../../stages/stageMachine";
 import { ChunkyButton } from "../ui/ChunkyButton";
@@ -72,9 +76,11 @@ export function ProblemCard({ problem }: { problem: Problem }) {
 export function StageCard({
   problem,
   diagnosis,
+  library = SEEDED_LIBRARY,
 }: {
   problem: Problem;
   diagnosis: Diagnosis;
+  library?: HomeworkLibrary;
 }) {
   const { stage, probeOutcome, goTo, answerProbe, reset } = useStage();
   const completed = useApp((s) => s.completedProblems);
@@ -260,8 +266,8 @@ export function StageCard({
         );
 
       case "celebrated": {
-        const next = nextProblemAfter(problem.id, completed);
-        const hw = homeworkForProblem(problem.id);
+        const next = nextProblemAfter(problem.id, completed, library);
+        const hw = homeworkForProblem(problem.id, library);
         return (
           <Card tone="teal">
             <p className="font-display text-2xl font-extrabold leading-tight">

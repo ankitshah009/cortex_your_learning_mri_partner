@@ -4,19 +4,25 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "api": "node scripts/cortex-api.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@fontsource/baloo-2": "^5.2.5",
     "@fontsource/nunito": "^5.2.5",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@types/three": "^0.171.0",
     "@xyflow/react": "^12.8.1",
     "canvas-confetti": "^1.9.3",
     "motion": "^12.23.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.6.2",
+    "three": "^0.171.0",
     "zustand": "^5.0.5"
   },
   "devDependencies": {

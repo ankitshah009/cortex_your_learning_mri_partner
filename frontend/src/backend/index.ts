@@ -3,8 +3,11 @@ import { mockProvider } from "./mock";
 import { makeLiveProvider } from "./live";
 import { makeEverosMemory, type EverosMemory } from "./everos";
 
-// Set VITE_ANALYZE_URL in frontend/.env to wire a real analyze endpoint.
-// Without it the app runs fully on seeded content.
+// Set VITE_CORTEX_API_URL to enable local PDF import + live diagnosis.
+// Example: VITE_CORTEX_API_URL=http://localhost:8787
+const apiBaseUrl = import.meta.env.VITE_CORTEX_API_URL as string | undefined;
+
+// Set VITE_ANALYZE_URL to wire a deployed Butterbase analyze endpoint.
 const analyzeUrl = import.meta.env.VITE_ANALYZE_URL as string | undefined;
 
 // Set VITE_EVEROS_API_KEY (+ VITE_EVEROS_USER_ID) to store sessions in real
@@ -13,9 +16,10 @@ const everosApiKey = import.meta.env.VITE_EVEROS_API_KEY as string | undefined;
 const everosUserId =
   (import.meta.env.VITE_EVEROS_USER_ID as string | undefined) ?? "demo_student";
 
-const baseProvider: DataProvider = analyzeUrl
-  ? makeLiveProvider(analyzeUrl)
-  : mockProvider;
+const baseProvider: DataProvider =
+  apiBaseUrl || analyzeUrl
+    ? makeLiveProvider({ apiBaseUrl, analyzeUrl })
+    : mockProvider;
 
 // Real EverOS memory when configured (silently falls back to mock on failure).
 export const everosMemory: EverosMemory | undefined = everosApiKey

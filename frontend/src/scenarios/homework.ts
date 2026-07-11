@@ -1,4 +1,10 @@
-import type { Diagnosis, Homework, Problem } from "./types";
+import type {
+  Course,
+  Diagnosis,
+  Homework,
+  HomeworkLibrary,
+  Problem,
+} from "./types";
 import { rexProblem, rexDiagnosis } from "./average-speed";
 import { bikeProblem, bikeDiagnosis } from "./bike-speed";
 import { meetProblem, meetDiagnosis } from "./closing-speed";
@@ -18,6 +24,9 @@ export const DIAGNOSES: Record<string, Diagnosis> = {
   [meetDiagnosis.problemId]: meetDiagnosis,
 };
 
+/** Course every seeded/uncategorized homework lands in by default. */
+export const DEFAULT_COURSE_ID = "course-math";
+
 export const HOMEWORKS: Homework[] = [
   {
     id: "hw-motion",
@@ -26,20 +35,118 @@ export const HOMEWORKS: Homework[] = [
     subject: "Math",
     due: "Due Tue, Jul 14",
     problemIds: [rexProblem.id, bikeProblem.id, meetProblem.id],
+    courseId: DEFAULT_COURSE_ID,
   },
 ];
 
-export function getHomework(id: string): Homework | undefined {
-  return HOMEWORKS.find((h) => h.id === id);
+export const COURSES: Course[] = [
+  {
+    id: DEFAULT_COURSE_ID,
+    title: "Math",
+    emoji: "🧮",
+    color: "lav",
+    subject: "Math",
+    homeworkIds: ["hw-motion"],
+    source: "seeded",
+  },
+];
+
+export const SEEDED_LIBRARY: HomeworkLibrary = {
+  courses: COURSES,
+  homeworks: HOMEWORKS,
+  problems: PROBLEMS,
+};
+
+export function mergeHomeworkLibrary(
+  base: HomeworkLibrary,
+  imported: HomeworkLibrary,
+): HomeworkLibrary {
+  const seenHw = new Set<string>();
+  const homeworks = [...imported.homeworks, ...base.homeworks].filter((hw) => {
+    if (seenHw.has(hw.id)) return false;
+    seenHw.add(hw.id);
+    return true;
+  });
+
+  // Merge courses by id. Imported course entries win for metadata, but their
+  // homeworkIds are unioned with the base so a scoped upload appends rather
+  // than replaces the seeded homeworks.
+  const courseById = new Map<string, Course>();
+  for (const course of [...base.courses, ...imported.courses]) {
+    const existing = courseById.get(course.id);
+    if (!existing) {
+      courseById.set(course.id, { ...course, homeworkIds: [...course.homeworkIds] });
+      continue;
+    }
+    // Only let the incoming entry override fields it actually provides, so a
+    // scoped-upload stub ({ id, homeworkIds }) never blanks a seeded course.
+    const merged: Course = {
+      ...existing,
+      title: course.title || existing.title,
+      emoji: course.emoji || existing.emoji,
+      color: course.color || existing.color,
+      subject: course.subject || existing.subject,
+      createdAt: course.createdAt ?? existing.createdAt,
+      source: course.source ?? existing.source,
+    };
+    merged.homeworkIds = [
+      ...new Set([...existing.homeworkIds, ...course.homeworkIds]),
+    ];
+    courseById.set(course.id, merged);
+  }
+
+  return {
+    courses: [...courseById.values()],
+    homeworks,
+    problems: { ...base.problems, ...imported.problems },
+  };
 }
 
-export function homeworkForProblem(problemId: string): Homework | undefined {
-  return HOMEWORKS.find((h) => h.problemIds.includes(problemId));
+export function getCourse(
+  id: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Course | undefined {
+  return library.courses.find((c) => c.id === id);
+}
+
+export function homeworksInCourse(
+  courseId: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Homework[] {
+  const course = getCourse(courseId, library);
+  if (!course) return [];
+  return course.homeworkIds
+    .map((id) => library.homeworks.find((h) => h.id === id))
+    .filter((hw): hw is Homework => Boolean(hw));
+}
+
+export function courseForHomework(
+  homeworkId: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Course | undefined {
+  return library.courses.find((c) => c.homeworkIds.includes(homeworkId));
+}
+
+export function getHomework(
+  id: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Homework | undefined {
+  return library.homeworks.find((h) => h.id === id);
+}
+
+export function homeworkForProblem(
+  problemId: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Homework | undefined {
+  return library.homeworks.find((h) => h.problemIds.includes(problemId));
 }
 
 /** Position of a problem within its homework, 1-based, for "Problem 2 of 3" */
-export function problemPosition(problemId: string) {
-  const hw = homeworkForProblem(problemId);
+export function problemPosition(
+  problemId: string,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+) {
+  const hw = homeworkForProblem(problemId, library);
   if (!hw) return null;
   return { index: hw.problemIds.indexOf(problemId) + 1, total: hw.problemIds.length, homework: hw };
 }
@@ -48,17 +155,22 @@ export function problemPosition(problemId: string) {
 export function nextProblemAfter(
   problemId: string,
   completed: Completions,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
 ): Problem | null {
-  const hw = homeworkForProblem(problemId);
+  const hw = homeworkForProblem(problemId, library);
   if (!hw) return null;
   const nextId = hw.problemIds.find((id) => id !== problemId && !completed[id]);
-  return nextId ? PROBLEMS[nextId] : null;
+  return nextId ? library.problems[nextId] : null;
 }
 
 /** First unfinished problem of a homework, for "Continue" buttons */
-export function firstUnfinished(hw: Homework, completed: Completions): Problem | null {
+export function firstUnfinished(
+  hw: Homework,
+  completed: Completions,
+  library: HomeworkLibrary = SEEDED_LIBRARY,
+): Problem | null {
   const id = hw.problemIds.find((pid) => !completed[pid]);
-  return id ? PROBLEMS[id] : null;
+  return id ? library.problems[id] : null;
 }
 
 export function homeworkProgress(hw: Homework, completed: Completions) {

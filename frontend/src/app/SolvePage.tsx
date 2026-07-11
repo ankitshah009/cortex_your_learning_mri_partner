@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { motion } from "motion/react";
-import type { Diagnosis, Problem } from "../scenarios/types";
+import type { Diagnosis, HomeworkLibrary, Problem } from "../scenarios/types";
 import { problemPosition } from "../scenarios/homework";
 import { backend } from "../backend";
+import { useHomeworkLibrary } from "../backend/useHomeworkLibrary";
 import { useStage, STAGES, stageIndex } from "../stages/stageMachine";
 import { useApp } from "../state/store";
 import { PathCanvas } from "../components/thought-path/PathCanvas";
@@ -24,6 +25,7 @@ export function SolvePage() {
 function SolveScan({ problemId }: { problemId: string }) {
   const { stage, probeOutcome, next, prev, goTo, reset } = useStage();
   const markCompleted = useApp((s) => s.markCompleted);
+  const { library } = useHomeworkLibrary();
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
@@ -38,7 +40,7 @@ function SolveScan({ problemId }: { problemId: string }) {
       .getProblem(problemId)
       .then((p) => {
         setProblem(p);
-        setReasoning(p.sampleReasoning);
+        setReasoning(p.sampleReasoning ?? "");
       })
       .catch(() => setNotFound(true));
     return () => reset();
@@ -118,7 +120,7 @@ function SolveScan({ problemId }: { problemId: string }) {
 
   return (
     <div className="flex h-dvh flex-col">
-      <TopBar problem={problem} />
+      <TopBar problem={problem} library={library} />
       {stage === "intro" ? (
         <IntroLayout
           problem={problem}
@@ -154,7 +156,13 @@ function SolveScan({ problemId }: { problemId: string }) {
           </div>
           <aside className="flex w-[380px] shrink-0 flex-col gap-4 overflow-y-auto border-l-[3px] border-ink/5 bg-cream p-4">
             <ProblemCard problem={problem} />
-            {diagnosis && <StageCard problem={problem} diagnosis={diagnosis} />}
+            {diagnosis && (
+              <StageCard
+                problem={problem}
+                diagnosis={diagnosis}
+                library={library}
+              />
+            )}
           </aside>
         </div>
       )}
@@ -162,9 +170,15 @@ function SolveScan({ problemId }: { problemId: string }) {
   );
 }
 
-function TopBar({ problem }: { problem: Problem }) {
+function TopBar({
+  problem,
+  library,
+}: {
+  problem: Problem;
+  library: HomeworkLibrary;
+}) {
   const stage = useStage((s) => s.stage);
-  const pos = problemPosition(problem.id);
+  const pos = problemPosition(problem.id, library);
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b-[3px] border-ink/5 bg-white px-5">
       <Link
@@ -250,6 +264,11 @@ function IntroLayout({
             >
               Scan my thinking! 🔍
             </ChunkyButton>
+            {reasoning.trim().length < 10 && (
+              <p className="mt-2 text-center text-sm font-bold text-ink-soft">
+                Tell me a little more about how you got there so I can scan it! ✍️
+              </p>
+            )}
           </div>
         </motion.div>
       </div>

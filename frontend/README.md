@@ -13,6 +13,19 @@ npm run dev
 
 Open http://localhost:5173
 
+For PDF import + live LLM diagnosis, run the API server in a second terminal:
+
+```bash
+ANTHROPIC_API_KEY=... npm run api
+```
+
+Then set `VITE_CORTEX_API_URL=http://localhost:8787` in `.env` before starting
+Vite.
+
+The local API defaults to the cheaper Haiku model for both reasoning and PDF
+extraction. Override with `CORTEX_REASONING_MODEL` or `CORTEX_EXTRACTION_MODEL`
+if you need a stronger model for a specific run.
+
 ## Demo flow
 
 1. **Home** — pick a name/avatar, see your brain as concept islands and your
@@ -41,12 +54,17 @@ Open http://localhost:5173
 The UI talks only to the `DataProvider` interface (`src/backend/provider.ts`).
 
 - Default: `mock.ts` serves seeded content from `src/scenarios/`.
-- Live mode: set `VITE_ANALYZE_URL` in `.env` (see `.env.example`). The app
-  POSTs `{ problemId, reasoning }` and expects a `Diagnosis` JSON back
-  (`src/scenarios/types.ts`). Any failure falls back to seeded content, so a
-  live demo can never stall.
-- To add homework/problems: author a `Problem` + `Diagnosis` pair in
-  `src/scenarios/` and register them in `src/scenarios/homework.ts`.
+- Full live mode: set `VITE_CORTEX_API_URL` in `.env` and run `npm run api`.
+  The app uploads worksheet PDFs to `/api/homeworks/import-pdf`, receives real
+  extracted questions, then POSTs `{ problemId, problem, reasoning }` to
+  `/api/analyze` for LLM-generated diagnoses and follow-up content. The API
+  forces Anthropic tool calls for structured extraction and diagnosis outputs.
+- Legacy live mode: set `VITE_ANALYZE_URL` in `.env`. The app POSTs
+  `{ problemId, problem, reasoning }` and expects a `Diagnosis` JSON back
+  (`src/scenarios/types.ts`). Seeded content still falls back to mock diagnoses
+  if the endpoint fails.
+- To add seeded demo homework/problems: author a `Problem` + `Diagnosis` pair
+  in `src/scenarios/` and register them in `src/scenarios/homework.ts`.
 
 ## Architecture
 

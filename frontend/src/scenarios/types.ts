@@ -27,6 +27,8 @@ export interface Problem {
   statement: string;
   /** Pre-filled student reasoning, editable in the input box */
   sampleReasoning: string;
+  source?: "seeded" | "pdf";
+  sourceLabel?: string;
 }
 
 /** Present only when the scan found a first divergence */
@@ -77,4 +79,75 @@ export interface Homework {
   due: string;
   /** Problems in the order the student should do them */
   problemIds: string[];
+  /** Course/folder this homework belongs to */
+  courseId?: string;
+  source?: "seeded" | "pdf";
+  sourceFileName?: string;
+  importedAt?: string;
+}
+
+/**
+ * A course / folder: the top-level container a student organizes work under.
+ * Each course grows its own knowledge graph as homeworks inside it are solved.
+ */
+export interface Course {
+  id: string;
+  title: string;
+  emoji: string;
+  /** Palette accent key (see COURSE_COLORS) that themes the 3D brain */
+  color: CourseColor;
+  subject: string;
+  /** Homeworks assigned into this course */
+  homeworkIds: string[];
+  createdAt?: string;
+  source?: "seeded" | "created";
+}
+
+export type CourseColor = "lav" | "teal" | "coral" | "sky" | "gold";
+
+export interface HomeworkLibrary {
+  courses: Course[];
+  homeworks: Homework[];
+  problems: Record<string, Problem>;
+}
+
+export interface HomeworkImportResult {
+  homework: Homework;
+  problems: Problem[];
+  courseId: string;
+}
+
+export interface CreateCourseInput {
+  title: string;
+  emoji?: string;
+  color?: CourseColor;
+  subject?: string;
+}
+
+/* ---------- Knowledge graph (the per-course brain) ---------- */
+
+/** One concept region in a course's brain. Nodes are distinct conceptIds. */
+export interface ConceptNode {
+  id: string;
+  label: string;
+  emoji: string;
+  /** 0..1: how strong this concept is, from completions across the course */
+  mastery: number;
+  /** An unresolved mix-up or unfinished work lives here */
+  wobbly: boolean;
+  /** How many problems in the course touch this concept */
+  problemCount: number;
+}
+
+/** A synapse: two concepts that co-occur in the same course are connected. */
+export interface ConceptEdge {
+  source: string;
+  target: string;
+  /** 0..1: grows as both endpoints are practiced together */
+  strength: number;
+}
+
+export interface CourseGraph {
+  nodes: ConceptNode[];
+  edges: ConceptEdge[];
 }
