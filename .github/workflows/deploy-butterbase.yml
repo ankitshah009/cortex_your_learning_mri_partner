@@ -38,6 +38,11 @@ jobs:
       - name: Install Butterbase CLI
         run: npm install -g @butterbase/cli
 
+      - name: Configure Butterbase CLI auth
+        run: |
+          butterbase config set endpoint https://api.butterbase.ai
+          butterbase config set apiKey "$BUTTERBASE_API_KEY"
+
       - name: Deploy analyze function
         run: butterbase functions deploy functions/analyze/index.ts --name analyze --app "$APP_ID"
 
