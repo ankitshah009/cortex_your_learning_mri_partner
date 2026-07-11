@@ -39,6 +39,7 @@ export const useStage = create<StageState>((set) => ({
     set((s) => {
       const i = STAGES.indexOf(s.stage);
       if (i >= STAGES.length - 1) return {};
+      if (s.stage === "repairing") return {};
       const target = STAGES[i + 1];
       // Skipping forward past the probe with arrow keys assumes the
       // misconception answer, so the demo never stalls on stage.

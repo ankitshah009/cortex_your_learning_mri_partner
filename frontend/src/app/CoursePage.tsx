@@ -21,6 +21,7 @@ import { ChunkyButton } from "../components/ui/ChunkyButton";
 export function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const completed = useApp((s) => s.completedProblems);
+  const understanding = useApp((s) => s.understandingByProblem);
   const { library, loading, refresh } = useHomeworkLibrary();
   const course = courseId ? getCourse(courseId, library) : undefined;
 
@@ -49,7 +50,7 @@ export function CoursePage() {
   }
 
   const homeworks = homeworksInCourse(course.id, library);
-  const graph = buildCourseGraph(course, library, completed);
+  const graph = buildCourseGraph(course, library, completed, understanding);
   const { done, total } = courseProgress(course, library, completed);
   const strongConcepts = graph.nodes.filter((n) => !n.wobbly).length;
 

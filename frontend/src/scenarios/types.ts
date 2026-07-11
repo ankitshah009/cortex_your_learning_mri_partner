@@ -71,6 +71,49 @@ export interface Diagnosis {
   };
 }
 
+export type UnderstandingDepth =
+  | "surface_confusion"
+  | "procedural_question"
+  | "conceptual_question"
+  | "contrast_question"
+  | "transfer_question"
+  | "metacognitive_question"
+  | "explanation_attempt"
+  | "transfer_application"
+  | "memory_rule";
+
+export type UnderstandingSignalKind =
+  | "attempt"
+  | "probe_answer"
+  | "student_question"
+  | "lesson_reflection"
+  | "transfer";
+
+export interface UnderstandingSignal {
+  id: string;
+  problemId: string;
+  kind: UnderstandingSignalKind;
+  label: string;
+  delta: number;
+  createdAt: string;
+  depth?: UnderstandingDepth;
+  feedbackToStudent?: string;
+  nextPrompt?: string;
+  evidence?: string;
+}
+
+export interface UnderstandingEvaluation {
+  depth: UnderstandingDepth;
+  understandingDelta: number;
+  feedbackToStudent: string;
+  nextPrompt: string;
+  evidence: string;
+}
+
+export type UnderstandingTurnMode =
+  | "student_question"
+  | "cora_prompt_response";
+
 export interface Homework {
   id: string;
   title: string;
@@ -137,6 +180,10 @@ export interface ConceptNode {
   wobbly: boolean;
   /** How many problems in the course touch this concept */
   problemCount: number;
+  /** Most recent evidence signal that touched this concept */
+  lastPracticedAt?: string | null;
+  /** 0..1 temporal confidence after recency decay */
+  retention?: number;
 }
 
 /** A synapse: two concepts that co-occur in the same course are connected. */

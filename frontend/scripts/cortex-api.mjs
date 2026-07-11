@@ -65,6 +65,10 @@ const server = createServer(async (req, res) => {
       return sendJson(res, 200, await analyzeReasoning(await readJson(req)));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/evaluate-question") {
+      return sendJson(res, 200, await evaluateStudentQuestion(await readJson(req)));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/sessions") {
       sessions.push({ ...(await readJson(req)), recordedAt: new Date().toISOString() });
       return sendJson(res, 200, { ok: true });
@@ -195,6 +199,45 @@ async function analyzeReasoning(input) {
     ],
   });
   return normalizeDiagnosis(problem.id, diagnosis);
+}
+
+async function evaluateStudentQuestion(input) {
+  requireApiKey();
+  const question = String(input.question ?? "").trim();
+  const problem = input.problem;
+  const diagnosis = input.diagnosis;
+  const currentUnderstanding = Number(input.currentUnderstanding ?? 0);
+  const mode = cleanString(input.mode) || "student_question";
+  const prompt = cleanString(input.prompt);
+
+  if (!problem?.statement) {
+    throw httpError(400, "Missing problem prompt.");
+  }
+  if (!question || question.length < 4) {
+    throw httpError(400, "Question is too short to evaluate.");
+  }
+
+  const evaluation = await askClaudeTool({
+    model: REASONING_MODEL,
+    max_tokens: 900,
+    system: QUESTION_EVALUATION_SYSTEM_PROMPT,
+    tool: QUESTION_EVALUATION_TOOL,
+    messages: [
+      {
+        role: "user",
+        content: questionEvaluationPrompt({
+          problem,
+          diagnosis,
+          question,
+          currentUnderstanding,
+          mode,
+          prompt,
+        }),
+      },
+    ],
+  });
+
+  return normalizeQuestionEvaluation(evaluation);
 }
 
 async function extractQuestionsFromPdf(pdfBytes, fileName) {
@@ -370,6 +413,40 @@ function normalizeProbeOptions(options) {
   ];
 }
 
+function normalizeQuestionEvaluation(raw) {
+  const allowedDepths = [
+    "surface_confusion",
+    "procedural_question",
+    "conceptual_question",
+    "contrast_question",
+    "transfer_question",
+    "metacognitive_question",
+    "explanation_attempt",
+    "transfer_application",
+    "memory_rule",
+  ];
+  const depth = allowedDepths.includes(raw.depth)
+    ? raw.depth
+    : "surface_confusion";
+
+  return {
+    depth,
+    understandingDelta: Math.max(
+      0,
+      Math.min(22, Math.round(Number(raw.understandingDelta) || 0)),
+    ),
+    feedbackToStudent:
+      cleanString(raw.feedbackToStudent) ||
+      "Good question. Let's use it to make your understanding sharper.",
+    nextPrompt:
+      cleanString(raw.nextPrompt) ||
+      "Try saying the rule in your own words.",
+    evidence:
+      cleanString(raw.evidence) ||
+      "The student asked a question during the reasoning conversation.",
+  };
+}
+
 const EXTRACTION_TOOL = {
   name: "submit_extracted_homework",
   description:
@@ -420,6 +497,63 @@ const EXTRACTION_TOOL = {
             },
           },
         },
+      },
+    },
+  },
+};
+
+const QUESTION_EVALUATION_TOOL = {
+  name: "submit_question_understanding_signal",
+  description:
+    "Evaluate a student's question as evidence of their understanding.",
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "depth",
+      "understandingDelta",
+      "feedbackToStudent",
+      "nextPrompt",
+      "evidence",
+    ],
+    properties: {
+      depth: {
+        type: "string",
+        enum: [
+          "surface_confusion",
+          "procedural_question",
+          "conceptual_question",
+          "contrast_question",
+          "transfer_question",
+          "metacognitive_question",
+          "explanation_attempt",
+          "transfer_application",
+          "memory_rule",
+        ],
+        description:
+          "The deepest learning signal shown by the student's conversation turn.",
+      },
+      understandingDelta: {
+        type: "number",
+        minimum: 0,
+        maximum: 22,
+        description:
+          "How much to increase understanding. Shallow turns are 3-6; procedural 7-10; conceptual/explanation 11-16; transfer, memory, and metacognitive proof 16-22.",
+      },
+      feedbackToStudent: {
+        type: "string",
+        description:
+          "A short response that answers or validates the question without giving away too much.",
+      },
+      nextPrompt: {
+        type: "string",
+        description:
+          "A short follow-up prompt that asks the student to prove or deepen understanding.",
+      },
+      evidence: {
+        type: "string",
+        description:
+          "Why this question is evidence of the selected understanding depth.",
       },
     },
   },
@@ -607,6 +741,50 @@ Rules:
 
 const DIAGNOSIS_SYSTEM_PROMPT =
   "You are the diagnostic engine for a kid-friendly homework tutor. You map reasoning, find the earliest divergence, create one diagnostic probe, give a tiny repair lesson, and respond by calling the provided tool.";
+
+function questionEvaluationPrompt({
+  problem,
+  diagnosis,
+  question,
+  currentUnderstanding,
+  mode,
+  prompt,
+}) {
+  const mixup = diagnosis?.mixup;
+  return `Evaluate this student's conversation turn as evidence of understanding.
+
+Problem title: ${problem.title}
+Problem prompt: ${problem.statement}
+Current understanding score: ${currentUnderstanding}/100
+Turn mode: ${mode}
+Cora prompt, if any: ${prompt || "none"}
+Diagnosis summary: ${
+    mixup
+      ? `Likely mix-up: ${mixup.hypothesis?.name}. Explanation: ${mixup.hypothesis?.kidExplanation}`
+      : "The student's submitted reasoning looked solid."
+  }
+Student turn: ${question}
+
+Classify the turn:
+- surface_confusion: "I don't get it", vague confusion.
+- procedural_question: asks what formula/step to use.
+- conceptual_question: asks why an idea works or fails.
+- contrast_question: asks the difference between two cases or when one method does vs does not apply.
+- transfer_question: asks whether the idea works in a new situation.
+- metacognitive_question: asks how to notice, remember, or catch the mistake next time.
+- explanation_attempt: answers Cora by explaining the corrected idea in their own words.
+- transfer_application: applies the corrected idea to a new/similar situation.
+- memory_rule: states a future-facing rule or check they will remember next time.
+
+Give more progress for turns that reveal boundaries, transfer, self-monitoring, or a useful memory rule.
+Do not over-reward "what is the answer" questions or copied lesson text.
+If this is a Cora-prompt response, evaluate whether the student actually answered the prompt.
+Answer briefly, then ask the student for the next smallest proof of understanding.
+Call the submit_question_understanding_signal tool.`;
+}
+
+const QUESTION_EVALUATION_SYSTEM_PROMPT =
+  "You evaluate student conversation turns as learning evidence. Reward curiosity, explanation, transfer, and metacognition. Respond by calling the provided tool.";
 
 async function toWebRequest(req) {
   const body = await readBuffer(req);

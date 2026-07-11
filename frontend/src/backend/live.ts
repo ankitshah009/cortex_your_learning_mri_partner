@@ -200,6 +200,26 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
         return mockProvider.analyzeReasoning(problemId, reasoning);
       }
     },
+    async evaluateStudentQuestion(input) {
+      if (!apiBaseUrl) return mockProvider.evaluateStudentQuestion(input);
+
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 12000);
+        const res = await fetch(`${apiBaseUrl}/api/evaluate-question`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal: ctrl.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`evaluate-question returned ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn("[live] evaluate-question failed, using local heuristic", err);
+        return mockProvider.evaluateStudentQuestion(input);
+      }
+    },
     async recordLearningSession(topic, summary, score) {
       if (!apiBaseUrl) {
         return mockProvider.recordLearningSession(topic, summary, score);

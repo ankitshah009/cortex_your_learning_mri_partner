@@ -21,13 +21,16 @@ const COURSE_EMOJI = ["🧮", "🔬", "📖", "🌍", "🎨", "🎵", "💻", "�
 const COURSE_COLORS: CourseColor[] = ["lav", "teal", "coral", "sky", "gold"];
 
 export function HomePage() {
-  const { profile, completedProblems } = useApp();
+  const { profile, completedProblems, understandingByProblem } = useApp();
   const { courses, library, loading, error, createCourse, refresh } =
     useCourses();
   if (!profile) return <WelcomeScreen />;
 
   const totalConnections = courses.reduce(
-    (sum, c) => sum + buildCourseGraph(c, library, completedProblems).edges.length,
+    (sum, c) =>
+      sum +
+      buildCourseGraph(c, library, completedProblems, understandingByProblem)
+        .edges.length,
     0,
   );
 
@@ -151,8 +154,9 @@ function CourseCard({
   delay: number;
 }) {
   const completed = useApp((s) => s.completedProblems);
+  const understanding = useApp((s) => s.understandingByProblem);
   const { done, total } = courseProgress(course, library, completed);
-  const graph = buildCourseGraph(course, library, completed);
+  const graph = buildCourseGraph(course, library, completed, understanding);
   const hwCount = course.homeworkIds.length;
 
   return (

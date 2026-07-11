@@ -1,15 +1,23 @@
+import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Link } from "react-router-dom";
-import type { Diagnosis, HomeworkLibrary, Problem } from "../../scenarios/types";
+import type {
+  Diagnosis,
+  HomeworkLibrary,
+  Problem,
+  UnderstandingSignal,
+} from "../../scenarios/types";
 import {
   nextProblemAfter,
   homeworkForProblem,
   SEEDED_LIBRARY,
 } from "../../scenarios/homework";
+import { backend } from "../../backend";
 import { useApp } from "../../state/store";
 import { useStage, type Stage } from "../../stages/stageMachine";
 import { ChunkyButton } from "../ui/ChunkyButton";
 import { useCountUp } from "../../lib/useCountUp";
+import { UNDERSTANDING_MASTERY_THRESHOLD } from "../../learning/understanding";
 
 function Card({
   children,
@@ -84,12 +92,25 @@ export function StageCard({
 }) {
   const { stage, probeOutcome, goTo, answerProbe, reset } = useStage();
   const completed = useApp((s) => s.completedProblems);
+  const understanding = useApp(
+    (s) => s.understandingByProblem[problem.id] ?? { score: 0, signals: [] },
+  );
+  const addUnderstandingSignal = useApp((s) => s.addUnderstandingSignal);
   const mixup = diagnosis.mixup;
 
   return (
-    <AnimatePresence mode="wait">
-      <div key={stage}>{renderStage(stage)}</div>
-    </AnimatePresence>
+    <>
+      <AnimatePresence mode="wait">
+        <div key={stage}>{renderStage(stage)}</div>
+      </AnimatePresence>
+      <UnderstandingPanel
+        problem={problem}
+        diagnosis={diagnosis}
+        score={understanding.score}
+        signals={understanding.signals}
+        onSignal={(signal) => addUnderstandingSignal(problem.id, signal)}
+      />
+    </>
   );
 
   function renderStage(stage: Stage) {
@@ -177,7 +198,19 @@ export function StageCard({
               {mixup.probe.options.map((opt) => (
                 <button
                   key={opt.id}
-                  onClick={() => answerProbe(opt.kind)}
+                  onClick={() => {
+                    addUnderstandingSignal(problem.id, {
+                      kind: "probe_answer",
+                      label:
+                        opt.kind === "correct"
+                          ? "Answered the probe"
+                          : "Tested the hunch",
+                      delta:
+                        opt.kind === "correct" ? 15 : opt.kind === "mixup" ? 5 : 3,
+                      evidence: `Student chose "${opt.label}" on the diagnostic probe.`,
+                    });
+                    answerProbe(opt.kind);
+                  }}
                   className="rounded-2xl border-[3px] border-ink/10 bg-white px-4 py-3 text-left font-display text-lg font-extrabold shadow-[0_4px_0_rgba(63,46,86,0.1)] transition-transform hover:scale-[1.02] active:translate-y-[3px] active:shadow-none"
                 >
                   {opt.label}
@@ -245,29 +278,57 @@ export function StageCard({
             <ChunkyButton
               variant="coral"
               className="mt-4 w-full"
-              onClick={() => goTo("repairing")}
+              onClick={() => {
+                addUnderstandingSignal(problem.id, {
+                  kind: "lesson_reflection",
+                  label: "Studied tiny fix",
+                  delta: 6,
+                  evidence:
+                    "Student reviewed the targeted lesson before entering the repair lab.",
+                });
+                goTo("repairing");
+              }}
             >
-              Repair my brain! 🔧
+              Practice the fix
             </ChunkyButton>
           </Card>
         );
 
       case "repairing":
         return (
-          <Card tone="teal">
-            <p className="font-display text-lg font-extrabold">
-              Repairing... ⚡
-            </p>
-            <p className="mt-2 text-sm font-semibold text-ink-soft">
-              Watch the wobbly bubble turn into a lightbulb, and everything
-              after it lights back up!
-            </p>
-          </Card>
+          <RepairLab
+            problem={problem}
+            diagnosis={diagnosis}
+            score={understanding.score}
+            onSignal={(signal) => addUnderstandingSignal(problem.id, signal)}
+            onComplete={() => goTo("celebrated")}
+          />
         );
 
       case "celebrated": {
         const next = nextProblemAfter(problem.id, completed, library);
         const hw = homeworkForProblem(problem.id, library);
+        if (understanding.score < UNDERSTANDING_MASTERY_THRESHOLD) {
+          return (
+            <Card tone="sun">
+              <p className="font-display text-xl font-extrabold">
+                Almost there
+              </p>
+              <p className="mt-2 text-sm font-semibold leading-relaxed">
+                Cora needs a little more proof before this problem counts as
+                learned. Answer a repair prompt or ask a deeper question to fill
+                the meter.
+              </p>
+              <ChunkyButton
+                variant="coral"
+                className="mt-4 w-full"
+                onClick={() => goTo("repairing")}
+              >
+                Keep proving it
+              </ChunkyButton>
+            </Card>
+          );
+        }
         return (
           <Card tone="teal">
             <p className="font-display text-2xl font-extrabold leading-tight">
@@ -316,4 +377,322 @@ export function StageCard({
         return null;
     }
   }
+}
+
+type SignalInput = Omit<UnderstandingSignal, "id" | "problemId" | "createdAt">;
+
+function RepairLab({
+  problem,
+  diagnosis,
+  score,
+  onSignal,
+  onComplete,
+}: {
+  problem: Problem;
+  diagnosis: Diagnosis;
+  score: number;
+  onSignal: (signal: SignalInput) => void;
+  onComplete: () => void;
+}) {
+  const prompts = repairPrompts(problem, diagnosis);
+  const [promptIndex, setPromptIndex] = useState(0);
+  const [answer, setAnswer] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [nextPrompt, setNextPrompt] = useState<string | null>(null);
+  const prompt = prompts[promptIndex % prompts.length];
+  const needed = Math.max(0, UNDERSTANDING_MASTERY_THRESHOLD - score);
+
+  async function submitProof() {
+    const text = answer.trim();
+    if (text.length < 8 || checking) return;
+    setChecking(true);
+    try {
+      const result = await backend.evaluateStudentQuestion({
+        problem,
+        diagnosis,
+        question: text,
+        currentUnderstanding: score,
+        mode: "cora_prompt_response",
+        prompt: prompt.text,
+      });
+      onSignal({
+        kind: prompt.kind,
+        label: prompt.signalLabel,
+        delta: result.understandingDelta,
+        depth: result.depth,
+        feedbackToStudent: result.feedbackToStudent,
+        nextPrompt: result.nextPrompt,
+        evidence: result.evidence,
+      });
+      setFeedback(result.feedbackToStudent);
+      setNextPrompt(result.nextPrompt);
+      setAnswer("");
+      if (score + result.understandingDelta < UNDERSTANDING_MASTERY_THRESHOLD) {
+        setPromptIndex((i) => i + 1);
+      }
+    } catch (err) {
+      setFeedback(
+        err instanceof Error
+          ? err.message
+          : "Cora couldn't check that proof yet.",
+      );
+      setNextPrompt(null);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <Card tone="teal">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-extrabold uppercase tracking-wide text-teal-dark">
+            Repair lab
+          </p>
+          <p className="mt-1 font-display text-xl font-extrabold leading-tight">
+            Prove it before it counts
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full border-2 border-teal/40 bg-white px-3 py-1 font-display text-sm font-extrabold text-teal-dark">
+          need {needed}%
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-2xl border-2 border-teal/40 bg-white p-3">
+        <p className="text-xs font-extrabold uppercase tracking-wide text-teal-dark">
+          Cora asks
+        </p>
+        <p className="mt-1 text-sm font-extrabold leading-snug">
+          {prompt.text}
+        </p>
+      </div>
+
+      <textarea
+        value={answer}
+        onChange={(e) => setAnswer(e.target.value)}
+        rows={3}
+        placeholder="Explain it like you're teaching your future self..."
+        className="mt-3 w-full resize-none rounded-2xl border-[3px] border-ink/10 bg-white p-3 text-sm font-bold leading-relaxed outline-none transition-colors focus:border-teal"
+      />
+      <ChunkyButton
+        variant="teal"
+        className="mt-3 w-full"
+        onClick={submitProof}
+        disabled={answer.trim().length < 8 || checking}
+      >
+        {checking ? "Checking proof..." : "Check my proof"}
+      </ChunkyButton>
+
+      {feedback && (
+        <div className="mt-3 rounded-2xl border-2 border-sun-dark/30 bg-sun-soft p-3">
+          <p className="text-sm font-bold leading-snug">{feedback}</p>
+          {nextPrompt && (
+            <p className="mt-2 text-sm font-extrabold leading-snug text-sun-dark">
+              {nextPrompt}
+            </p>
+          )}
+        </div>
+      )}
+
+      <ChunkyButton
+        variant={score >= UNDERSTANDING_MASTERY_THRESHOLD ? "coral" : "ghost"}
+        className="mt-4 w-full"
+        onClick={onComplete}
+        disabled={score < UNDERSTANDING_MASTERY_THRESHOLD}
+      >
+        {score >= UNDERSTANDING_MASTERY_THRESHOLD
+          ? "Lock it in"
+          : "Fill the meter to unlock"}
+      </ChunkyButton>
+    </Card>
+  );
+}
+
+function repairPrompts(problem: Problem, diagnosis: Diagnosis) {
+  if (!diagnosis.mixup) {
+    return [
+      {
+        text: `Explain why your method works for ${problem.title}.`,
+        kind: "lesson_reflection" as const,
+        signalLabel: "Explained method",
+      },
+      {
+        text: "What is one similar problem where this strategy would still work?",
+        kind: "transfer" as const,
+        signalLabel: "Applied transfer",
+      },
+      {
+        text: "What should your future brain remember when it sees this kind of problem?",
+        kind: "lesson_reflection" as const,
+        signalLabel: "Wrote memory rule",
+      },
+    ];
+  }
+
+  const { mixup } = diagnosis;
+  return [
+    {
+      text: `Why was "${mixup.hypothesis.name}" the shaky part of the first solution?`,
+      kind: "lesson_reflection" as const,
+      signalLabel: "Explained the mix-up",
+    },
+    {
+      text: "Write the tiny rule your future brain should remember before solving this kind of problem.",
+      kind: "lesson_reflection" as const,
+      signalLabel: "Wrote memory rule",
+    },
+    {
+      text: `${mixup.probe.question} Explain the check you would use, not just the answer.`,
+      kind: "transfer" as const,
+      signalLabel: "Applied transfer",
+    },
+  ];
+}
+
+function UnderstandingPanel({
+  problem,
+  diagnosis,
+  score,
+  signals,
+  onSignal,
+}: {
+  problem: Problem;
+  diagnosis: Diagnosis;
+  score: number;
+  signals: UnderstandingSignal[];
+  onSignal: (signal: SignalInput) => void;
+}) {
+  const shown = useCountUp(score);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [lastFeedback, setLastFeedback] = useState<string | null>(null);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+  const latestSignals = signals.slice(-4).reverse();
+
+  async function askCora() {
+    const text = question.trim();
+    if (text.length < 4 || asking) return;
+    setAsking(true);
+    try {
+      const result = await backend.evaluateStudentQuestion({
+        problem,
+        diagnosis,
+        question: text,
+        currentUnderstanding: score,
+      });
+      onSignal({
+        kind: "student_question",
+        label: depthLabel(result.depth),
+        delta: result.understandingDelta,
+        depth: result.depth,
+        feedbackToStudent: result.feedbackToStudent,
+        nextPrompt: result.nextPrompt,
+        evidence: result.evidence,
+      });
+      setLastFeedback(result.feedbackToStudent);
+      setLastPrompt(result.nextPrompt);
+      setQuestion("");
+    } catch (err) {
+      setLastFeedback(
+        err instanceof Error
+          ? err.message
+          : "I couldn't evaluate that question yet.",
+      );
+      setLastPrompt(null);
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  return (
+    <Card tone="white">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="font-display text-lg font-extrabold">
+          Understanding
+        </p>
+        <span className="font-display text-xl font-extrabold text-teal-dark">
+          {shown}%
+        </span>
+      </div>
+      <p className="mt-1 text-xs font-bold text-ink-soft">
+        Fill to {UNDERSTANDING_MASTERY_THRESHOLD}% with proof before moving on.
+      </p>
+      <div className="mt-2 h-4 overflow-hidden rounded-full border-2 border-ink/10 bg-cloud-soft">
+        <motion.div
+          className="h-full rounded-full bg-teal"
+          initial={false}
+          animate={{ width: `${score}%` }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {latestSignals.length ? (
+          latestSignals.map((signal) => (
+            <span
+              key={signal.id}
+              className="rounded-full border-2 border-teal/30 bg-teal-soft px-2.5 py-1 text-xs font-extrabold text-teal-dark"
+            >
+              +{signal.delta} {signal.label}
+            </span>
+          ))
+        ) : (
+          <span className="rounded-full border-2 border-ink/10 bg-cloud-soft px-2.5 py-1 text-xs font-extrabold text-ink-soft">
+            Waiting for evidence
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4 rounded-2xl border-2 border-lav/30 bg-lav-soft p-3">
+        <label
+          htmlFor="student-question"
+          className="font-display text-sm font-extrabold text-lav-dark"
+        >
+          Ask Cora a smart question
+        </label>
+        <textarea
+          id="student-question"
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          rows={2}
+          placeholder="Why does this shortcut fail here?"
+          className="mt-2 w-full resize-none rounded-2xl border-[3px] border-ink/10 bg-white p-3 text-sm font-bold leading-relaxed outline-none transition-colors focus:border-lav"
+        />
+        <ChunkyButton
+          variant="lav"
+          className="mt-2 w-full"
+          onClick={askCora}
+          disabled={question.trim().length < 4 || asking}
+        >
+          {asking ? "Thinking..." : "Ask Cora"}
+        </ChunkyButton>
+      </div>
+
+      {lastFeedback && (
+        <div className="mt-3 rounded-2xl border-2 border-sun-dark/30 bg-sun-soft p-3">
+          <p className="text-sm font-bold leading-snug">{lastFeedback}</p>
+          {lastPrompt && (
+            <p className="mt-2 text-sm font-extrabold leading-snug text-sun-dark">
+              {lastPrompt}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function depthLabel(depth: string) {
+  const labels: Record<string, string> = {
+    surface_confusion: "Named confusion",
+    procedural_question: "Asked a step question",
+    conceptual_question: "Asked why",
+    contrast_question: "Compared cases",
+    transfer_question: "Asked transfer",
+    metacognitive_question: "Asked how to remember",
+    explanation_attempt: "Explained it back",
+    transfer_application: "Applied transfer",
+    memory_rule: "Made memory rule",
+  };
+  return labels[depth] ?? "Asked a question";
 }

@@ -14,6 +14,7 @@ import { ChunkyButton } from "../components/ui/ChunkyButton";
 import { ProblemCard, StageCard } from "../components/panels/StageRail";
 import { coraLine, coraExpression } from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
+import { UNDERSTANDING_MASTERY_THRESHOLD } from "../learning/understanding";
 
 /** Remounts the scan for every problem so all state starts fresh */
 export function SolvePage() {
@@ -25,7 +26,11 @@ export function SolvePage() {
 function SolveScan({ problemId }: { problemId: string }) {
   const { stage, probeOutcome, next, prev, goTo, reset } = useStage();
   const markCompleted = useApp((s) => s.markCompleted);
+  const addUnderstandingSignal = useApp((s) => s.addUnderstandingSignal);
   const { library } = useHomeworkLibrary();
+  const understandingScore = useApp(
+    (s) => s.understandingByProblem[problemId]?.score ?? 0,
+  );
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
@@ -49,6 +54,12 @@ function SolveScan({ problemId }: { problemId: string }) {
   const submit = useCallback(async () => {
     setAnalyzeFailed(false);
     goTo("reading");
+    addUnderstandingSignal(problemId, {
+      kind: "attempt",
+      label: "Tried the problem",
+      delta: 20,
+      evidence: "Student submitted an answer with reasoning.",
+    });
     try {
       const result = await backend.analyzeReasoning(problemId, reasoning);
       setDiagnosis(result);
@@ -58,7 +69,7 @@ function SolveScan({ problemId }: { problemId: string }) {
       console.warn("[solve] analyze failed", err);
       setAnalyzeFailed(true);
     }
-  }, [goTo, problemId, reasoning]);
+  }, [addUnderstandingSignal, goTo, problemId, reasoning]);
 
   // Auto-advance the cinematic opening. A solid path (no mix-up) skips the
   // whole diagnosis arc and goes straight to the celebration.
@@ -70,11 +81,9 @@ function SolveScan({ problemId }: { problemId: string }) {
       t = setTimeout(() => goTo("scanning"), diagnosis.steps.length * 450 + 1400);
     } else if (stage === "scanning" && diagnosis) {
       t = setTimeout(
-        () => goTo(diagnosis.mixup ? "mixupFound" : "celebrated"),
+        () => goTo(diagnosis.mixup ? "mixupFound" : "repairing"),
         2100,
       );
-    } else if (stage === "repairing") {
-      t = setTimeout(() => goTo("celebrated"), 2600);
     }
     return () => clearTimeout(t);
   }, [stage, diagnosis, goTo]);
@@ -83,10 +92,22 @@ function SolveScan({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
-    if (stage === "celebrated" && !celebratedRef.current) {
+    if (
+      stage === "celebrated" &&
+      understandingScore >= UNDERSTANDING_MASTERY_THRESHOLD &&
+      !celebratedRef.current
+    ) {
       celebratedRef.current = true;
       bigCelebration();
       markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
+      addUnderstandingSignal(problem.id, {
+        kind: diagnosis.mixup ? "lesson_reflection" : "transfer",
+        label: diagnosis.mixup ? "Completed repair loop" : "Solid reasoning",
+        delta: diagnosis.mixup ? 12 : 24,
+        evidence: diagnosis.mixup
+          ? "Student completed the scan after a diagnosed mix-up."
+          : "Student reasoning was solid on the first scan.",
+      });
       backend.recordLearningSession(
         problem.title,
         diagnosis.mixup
@@ -96,7 +117,15 @@ function SolveScan({ problemId }: { problemId: string }) {
       );
     }
     if (stage !== "celebrated") celebratedRef.current = false;
-  }, [stage, probeOutcome, problem, diagnosis, markCompleted]);
+  }, [
+    stage,
+    probeOutcome,
+    problem,
+    diagnosis,
+    markCompleted,
+    addUnderstandingSignal,
+    understandingScore,
+  ]);
 
   // Presenter keys: arrows drive the demo, r restarts
   useEffect(() => {
@@ -105,7 +134,7 @@ function SolveScan({ problemId }: { problemId: string }) {
       if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") return;
       if (e.key === "ArrowRight" && stage !== "intro" && diagnosis) {
         // Solid path has no diagnosis arc to step through
-        if (stage === "scanning" && !diagnosis.mixup) goTo("celebrated");
+        if (stage === "scanning" && !diagnosis.mixup) goTo("repairing");
         else next();
       }
       if (e.key === "ArrowLeft") prev();

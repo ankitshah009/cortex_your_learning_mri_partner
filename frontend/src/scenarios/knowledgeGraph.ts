@@ -6,6 +6,8 @@ import type {
   HomeworkLibrary,
 } from "./types";
 import type { Completions } from "./homework";
+import type { UnderstandingState } from "../state/store";
+import { UNDERSTANDING_MASTERY_THRESHOLD } from "../learning/understanding";
 
 /**
  * Human-friendly names + emoji for concept ids the PDF extractor / seed data
@@ -47,6 +49,9 @@ interface ConceptAccumulator {
   problemIds: string[];
   completed: number;
   repaired: number;
+  understandingTotal: number;
+  practicedCount: number;
+  lastPracticedAt: string | null;
 }
 
 /**
@@ -59,6 +64,7 @@ export function buildCourseGraph(
   course: Course,
   library: HomeworkLibrary,
   completed: Completions,
+  understandingByProblem: Record<string, UnderstandingState> = {},
 ): CourseGraph {
   const concepts = new Map<string, ConceptAccumulator>();
   // conceptId pair key -> shared problem count, for edge strength
@@ -78,11 +84,31 @@ export function buildCourseGraph(
       problemIds: [],
       completed: 0,
       repaired: 0,
+      understandingTotal: 0,
+      practicedCount: 0,
+      lastPracticedAt: null,
     };
     acc.problemIds.push(pid);
     const outcome = completed[pid];
     if (outcome) acc.completed += 1;
     if (outcome === "repaired") acc.repaired += 1;
+
+    const understanding = understandingByProblem[pid];
+    if (understanding) {
+      acc.understandingTotal += understanding.score;
+      acc.practicedCount += 1;
+      const lastSignal = understanding.signals.at(-1);
+      if (
+        lastSignal &&
+        (!acc.lastPracticedAt || lastSignal.createdAt > acc.lastPracticedAt)
+      ) {
+        acc.lastPracticedAt = lastSignal.createdAt;
+      }
+    } else if (outcome) {
+      // Older persisted completions did not have understanding signals yet.
+      acc.understandingTotal += 100;
+      acc.practicedCount += 1;
+    }
     concepts.set(conceptId, acc);
   }
 
@@ -100,15 +126,27 @@ export function buildCourseGraph(
     const acc = concepts.get(id)!;
     const total = acc.problemIds.length;
     const ratio = total ? acc.completed / total : 0;
+    const evidenceRatio = acc.practicedCount
+      ? acc.understandingTotal / (acc.practicedCount * 100)
+      : ratio;
+    const recency = recencyWeight(acc.lastPracticedAt);
+    const mastery = Math.min(
+      0.95,
+      0.2 + evidenceRatio * 0.7 * recency + ratio * 0.05,
+    );
     const meta = conceptMeta(id);
     return {
       id,
       label: meta.label,
       emoji: meta.emoji,
-      // Baseline familiarity + earned mastery from completions.
-      mastery: Math.min(0.95, 0.35 + ratio * 0.6),
-      wobbly: total > 0 && acc.completed < total,
+      mastery,
+      wobbly:
+        total > 0 &&
+        (acc.completed < total ||
+          evidenceRatio * 100 < UNDERSTANDING_MASTERY_THRESHOLD),
       problemCount: total,
+      lastPracticedAt: acc.lastPracticedAt,
+      retention: recency,
     };
   });
 
@@ -126,6 +164,16 @@ export function buildCourseGraph(
   });
 
   return { nodes, edges };
+}
+
+function recencyWeight(lastPracticedAt: string | null) {
+  if (!lastPracticedAt) return 0.75;
+  const ageMs = Date.now() - new Date(lastPracticedAt).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  if (ageMs <= day) return 1;
+  if (ageMs <= 7 * day) return 0.9;
+  if (ageMs <= 30 * day) return 0.75;
+  return 0.55;
 }
 
 /** Aggregate progress across a whole course, for course-card summaries. */

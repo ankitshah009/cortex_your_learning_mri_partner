@@ -6,6 +6,8 @@ import type {
   HomeworkImportResult,
   HomeworkLibrary,
   Problem,
+  UnderstandingEvaluation,
+  UnderstandingTurnMode,
 } from "../scenarios/types";
 
 /**
@@ -33,6 +35,15 @@ export interface DataProvider {
   ): Promise<HomeworkImportResult>;
   /** Observe + Map + Detect + Hypothesize: reasoning text in, diagnosis out */
   analyzeReasoning(problemId: string, reasoning: string): Promise<Diagnosis>;
+  /** Evaluate a student's question as evidence of understanding */
+  evaluateStudentQuestion(input: {
+    problem: Problem;
+    diagnosis: Diagnosis;
+    question: string;
+    currentUnderstanding: number;
+    mode?: UnderstandingTurnMode;
+    prompt?: string;
+  }): Promise<UnderstandingEvaluation>;
   /** EverOS: record the repaired session so the brain map grows */
   recordLearningSession(
     topic: string,

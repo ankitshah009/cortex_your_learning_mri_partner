@@ -2,7 +2,8 @@
 
 Student-facing demo UI for Cortex: a playful "brain scan" that guides a student
 through their homework, finds where their reasoning first breaks, verifies the
-mix-up with one probe question, and repairs it with the smallest possible fix.
+mix-up with one probe question, then makes the student prove the repair through
+a short conversation before the problem counts as learned.
 
 ## Run
 
@@ -34,18 +35,21 @@ if you need a stronger model for a specific run.
    (Not scanned / Up next! / Solid ✓ / Fixed a mix-up 💡).
 3. **Problem 1, Rex's Round Trip** — the classic mix-up arc: thought path
    builds, the hidden wobbly step is found, Cora's hunch + memory evidence,
-   one probe question, tiny fix, repair cascade, confetti.
+   one probe question, tiny fix, then a repair lab where the student explains,
+   writes a memory rule, and applies transfer until the understanding meter
+   reaches 85%.
 4. **Problem 2, Mia's Bike Ride** — the reasoning is CORRECT: the scan traces
-   it, finds no mix-up, and celebrates a solid path. (This is what makes the
-   guide feel honest: it doesn't invent bugs.)
+   it, finds no mix-up, then still asks the student to prove why the method
+   works before the problem is completed.
 5. **Problem 3, Meet in the Middle** — a second, different mix-up
    (the Solo-Walker Mix-up).
-6. Each celebration offers **Next problem ➡️** until the homework is done;
-   the brain map brightens island by island.
+6. Each celebration offers **Next problem ➡️** only after enough understanding
+   evidence exists; the course brain brightens from scored evidence and recent
+   practice, not from clicks alone.
 
 ## Presenter keys (on the scan screen)
 
-- `→` advance a stage (auto-answers the probe if skipped)
+- `→` advance a stage (cannot skip the repair lab)
 - `←` go back a stage
 - `r` restart the scan
 
