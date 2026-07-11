@@ -1,0 +1,57 @@
+{
+  "id": "avg-instant-speed-v1",
+  "title": "Average versus instantaneous speed",
+  "prompt": "A car travels 120 miles in two hours. What was its speed exactly one hour into the trip? Explain your reasoning.",
+  "target_concept": "An average rate over an interval does not determine the instantaneous rate at a particular moment.",
+  "canonical_steps": [
+    {
+      "id": "c1",
+      "text": "Compute the average speed as total distance divided by total time: 60 mph."
+    },
+    {
+      "id": "c2",
+      "text": "Recognize that this is an interval average, not the speed at every moment."
+    },
+    {
+      "id": "c3",
+      "text": "Conclude that the speed at exactly one hour cannot be determined without more information about the motion."
+    }
+  ],
+  "critical_assumptions": [
+    {
+      "id": "a1",
+      "text": "The car traveled at constant speed.",
+      "provided_by_problem": false
+    }
+  ],
+  "misconceptions": [
+    {
+      "id": "average_equals_instantaneous",
+      "label": "Average treated as instantaneous",
+      "description": "The learner treats an interval average as the value at each moment."
+    },
+    {
+      "id": "unstated_constant_speed",
+      "label": "Constant speed assumed",
+      "description": "The learner's conclusion is valid only after adding a constant-speed assumption not supplied by the problem."
+    },
+    {
+      "id": "arithmetic_error",
+      "label": "Average calculation error",
+      "description": "The learner incorrectly divides total distance by total time."
+    }
+  ],
+  "preferred_probe": {
+    "question": "Suppose the car was stopped during the first hour and traveled all 120 miles during the second. Would its average speed over the two hours still be 60 mph? What would its speed be exactly at the one-hour mark?",
+    "purpose": "Separate the interval average from the value at a specific moment."
+  },
+  "interventions": {
+    "average_equals_instantaneous": {
+      "title": "Average versus instantaneous speed",
+      "explanation": "Average speed summarizes the full trip: total distance divided by total time. Instantaneous speed describes one specific moment. Different speed patterns can produce the same two-hour average, so the average alone cannot determine the exact speed after one hour.",
+      "visual_type": "two_scenario_timeline",
+      "transfer_problem": "A cyclist travels 30 miles in two hours. Can you determine the cyclist's speed exactly 30 minutes into the trip? Explain what additional information would be needed.",
+      "success_criterion": "The learner states that an interval average does not determine a moment-level value."
+    }
+  }
+}

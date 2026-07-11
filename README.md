@@ -92,11 +92,20 @@ class MyTutorAgent:
 
 ## Documentation
 
+Core guides for using the sponsor tools and architecture:
+
 | Document | Purpose |
 |----------|---------|
-| **[EVEROS_SETUP.md](EVEROS_SETUP.md)** | 5-minute quick start and core concepts |
-| **[EVEROS_INTEGRATION.md](EVEROS_INTEGRATION.md)** | Full API reference and architecture |
-| **[INTEGRATION_SUMMARY.md](INTEGRATION_SUMMARY.md)** | Project overview and next steps |
+| **[EVEROS_SETUP.md](EVEROS_SETUP.md)** | Quick start and core concepts |
+| **[EVEROS_INTEGRATION.md](EVEROS_INTEGRATION.md)** | Architecture and full API reference |
+| **[README.md](README.md)** | Project overview and examples |
+
+Additional Cortex implementation package:
+
+| Document | Purpose |
+|----------|---------|
+| **[documentation/00_README.md](documentation/00_README.md)** | Implementation package overview and reading order |
+| **[documentation/12_BUILD_CHECKLIST.md](documentation/12_BUILD_CHECKLIST.md)** | Compact build checklist |
 
 ## Project Structure
 
@@ -110,10 +119,20 @@ examples/
 ├── everos_basic.py          # Full usage example
 └── verify_everos.py         # Integration test
 
+documentation/
+├── 00_README.md             # Cortex implementation package overview
+├── 01_...12_*.md            # Product, architecture, AI, demo, and build docs
+├── assets/                  # Concept visual
+├── examples/                # API and diagnostic fixtures
+├── schemas/                 # JSON schemas
+└── source-material/         # Original planning notes
+
 .env.example                 # Environment template
 .gitignore                   # Git exclusions
 .mcp.json                    # Butterbase MCP config
 requirements.txt             # Dependencies
+EVEROS_SETUP.md              # Sponsor quick start and core concepts
+EVEROS_INTEGRATION.md        # Sponsor architecture and API reference
 README.md                    # This file
 ```
 
@@ -287,9 +306,9 @@ EverOS Cloud pricing based on **MemCell count**:
 1. Run `python examples/verify_everos.py`
 2. Run `python examples/everos_basic.py`
 3. Read [EVEROS_SETUP.md](EVEROS_SETUP.md)
-4. Integrate `EverOSMemoryManager` into your agent
-5. Set up batch import of historical data
-6. Monitor dashboard at https://everos.evermind.ai
+4. Read [EVEROS_INTEGRATION.md](EVEROS_INTEGRATION.md)
+5. Work through [documentation/12_BUILD_CHECKLIST.md](documentation/12_BUILD_CHECKLIST.md)
+6. Integrate `EverOSMemoryManager` into your agent
 
 ## Support
 
@@ -299,7 +318,8 @@ EverOS Cloud pricing based on **MemCell count**:
 
 **Questions about Cortex?**
 - Check examples in `examples/`
-- Read [EVEROS_INTEGRATION.md](EVEROS_INTEGRATION.md)
+- Read [README.md](README.md)
+- Read [documentation/00_README.md](documentation/00_README.md)
 - Run `examples/verify_everos.py`
 
 ## Credits

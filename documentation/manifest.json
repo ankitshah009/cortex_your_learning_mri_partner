@@ -1,0 +1,28 @@
+{
+  "project": "Cortex",
+  "package": "One-day implementation documentation",
+  "generated_files": [
+    "00_README.md",
+    "01_PRODUCT_VISION_AND_PRD.md",
+    "02_MVP_SCOPE_AND_REQUIREMENTS.md",
+    "03_USER_EXPERIENCE_AND_DEMO_FLOW.md",
+    "04_TECHNICAL_ARCHITECTURE.md",
+    "05_AI_DIAGNOSTIC_ENGINE.md",
+    "06_DATA_MODEL_AND_API_CONTRACTS.md",
+    "07_ONE_DAY_EXECUTION_PLAN.md",
+    "08_PROMPT_LIBRARY.md",
+    "09_DEMO_SCRIPT_AND_PITCH.md",
+    "10_TEST_PLAN_RISKS_AND_FALLBACKS.md",
+    "11_POST_HACKATHON_ROADMAP.md",
+    "12_BUILD_CHECKLIST.md",
+    "assets/cortex-concept.jpeg",
+    "examples/api-examples.md",
+    "examples/golden-diagnostic.json",
+    "examples/problem-config.json",
+    "schemas/diagnostic-output.schema.json",
+    "source-material/Hackathon-information.txt",
+    "source-material/Project-idea.txt",
+    "source-material/pasted(1).txt"
+  ],
+  "source_note": "Derived from the supplied Cortex product notes, concept visual, and hackathon event page, plus product and engineering reasoning."
+}

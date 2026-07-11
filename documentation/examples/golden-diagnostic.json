@@ -1,0 +1,79 @@
+{
+  "session_id": "sess_demo_001",
+  "stage": "diagnosed",
+  "reasoning_nodes": [
+    {
+      "id": "n1",
+      "sequence": 1,
+      "type": "operation",
+      "text": "Divide 120 miles by two hours.",
+      "evidence_excerpt": "120 miles in two hours",
+      "depends_on": [],
+      "status": "supported",
+      "explanation": "This is the correct setup for average speed."
+    },
+    {
+      "id": "n2",
+      "sequence": 2,
+      "type": "claim",
+      "text": "The trip's average speed is 60 mph.",
+      "evidence_excerpt": "its speed was 60 mph",
+      "depends_on": [
+        "n1"
+      ],
+      "status": "supported",
+      "explanation": "Interpreted as average speed across two hours, this is correct."
+    },
+    {
+      "id": "n3",
+      "sequence": 3,
+      "type": "conclusion",
+      "text": "The car's speed exactly one hour into the trip was 60 mph.",
+      "evidence_excerpt": "after one hour, it was moving at 60 mph",
+      "depends_on": [
+        "n2"
+      ],
+      "status": "first_divergence",
+      "explanation": "The two-hour average does not determine the speed at a particular moment unless constant speed is known."
+    }
+  ],
+  "reasoning_edges": [
+    {
+      "source": "n1",
+      "target": "n2"
+    },
+    {
+      "source": "n2",
+      "target": "n3"
+    }
+  ],
+  "first_divergence_node_id": "n3",
+  "hypothesis": {
+    "id": "average_equals_instantaneous",
+    "label": "Average treated as instantaneous",
+    "statement": "The learner may be treating the average speed over the interval as the speed at every moment.",
+    "confidence": 0.82,
+    "evidence_node_ids": [
+      "n2",
+      "n3"
+    ],
+    "alternatives": [
+      "The learner may have silently assumed constant speed."
+    ]
+  },
+  "probe": {
+    "question": "Suppose the car was stopped during the first hour and traveled all 120 miles during the second. Would its average speed over the two hours still be 60 mph? What would its speed be exactly at the one-hour mark?",
+    "purpose": "This separates an interval average from the value at a specific moment.",
+    "confirms_when": [
+      "The learner recognizes that the same average can occur with a different one-hour speed."
+    ],
+    "weakens_when": [
+      "The learner explains that constant speed was an explicit but unsupported assumption."
+    ]
+  },
+  "meta": {
+    "model": "fixture",
+    "latency_ms": 0,
+    "used_fallback": true
+  }
+}
