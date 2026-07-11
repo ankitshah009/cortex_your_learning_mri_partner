@@ -17,7 +17,6 @@ import {
   makeCourse,
   saveCreatedCourses,
 } from "./courseStore";
-import { getCustomProblem, isCustomProblem } from "../scenarios/custom";
 
 const STORAGE_KEY = "cortex-imported-homework-library";
 
@@ -152,11 +151,24 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       return getLibrary().homeworks;
     },
     async getProblem(problemId) {
-      const problem = isCustomProblem(problemId)
-        ? getCustomProblem(problemId)
-        : getLibrary().problems[problemId];
+      const problem = getLibrary().problems[problemId];
       if (!problem) throw new Error(`Unknown problem: ${problemId}`);
       return problem;
+    },
+    async getConceptBrief(input) {
+      if (!apiBaseUrl) return mockProvider.getConceptBrief(input);
+      try {
+        const res = await fetch(apiUrl("/api/concept-brief"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        });
+        if (!res.ok) throw new Error(`concept-brief returned ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn("[live] concept brief failed, using local fallback", err);
+        return mockProvider.getConceptBrief(input);
+      }
     },
     async importHomeworkPdf(file, courseId): Promise<HomeworkImportResult> {
       const targetCourseId = courseId ?? DEFAULT_COURSE_ID;
@@ -199,9 +211,7 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
       return { ...result, homework, courseId: targetCourseId };
     },
     async analyzeReasoning(problemId, reasoning): Promise<Diagnosis> {
-      const problem = isCustomProblem(problemId)
-        ? getCustomProblem(problemId)
-        : (getLibrary().problems[problemId] as Problem | undefined);
+      const problem = getLibrary().problems[problemId] as Problem | undefined;
       if (!problem) throw new Error(`Unknown problem: ${problemId}`);
       const url = apiBaseUrl ? apiUrl("/api/analyze") : analyzeUrl;
       if (!url) return mockProvider.analyzeReasoning(problemId, reasoning);
@@ -225,8 +235,8 @@ export function makeLiveProvider(options: LiveProviderOptions): DataProvider {
         return live;
       } catch (err) {
         console.warn("[live] analyze failed, using seeded diagnosis", err);
-        // No seed exists for custom/pdf problems: rethrow to the UI.
-        if (isCustomProblem(problemId) || problem.source === "pdf") throw err;
+        // No seed exists for PDF-imported problems: rethrow to the UI.
+        if (problem.source === "pdf") throw err;
         const seeded: LiveDiagnosis = {
           ...(await mockProvider.analyzeReasoning(problemId, reasoning)),
           source: "seeded-fallback",

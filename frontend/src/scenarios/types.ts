@@ -22,6 +22,8 @@ export interface Problem {
   id: string;
   /** Concept region this problem belongs to (links to an island on the brain map) */
   conceptId: string;
+  /** Supporting concepts discovered in the worksheet (used for graph edges). */
+  relatedConceptIds?: string[];
   title: string;
   emoji: string;
   statement: string;
@@ -29,6 +31,41 @@ export interface Problem {
   sampleReasoning: string;
   source?: "seeded" | "pdf";
   sourceLabel?: string;
+  /** Optional web grounding gathered for an imported worksheet. */
+  learningContext?: LearningContext;
+}
+
+export interface LearningSource {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface LearningContext {
+  mainTopic: string;
+  summary: string;
+  query: string;
+  sources: LearningSource[];
+}
+
+export interface ConceptBriefInput {
+  conceptId: string;
+  label: string;
+  courseTitle: string;
+  subject: string;
+  problemTitles: string[];
+  problemStatements: string[];
+}
+
+export interface ConceptBrief {
+  conceptId: string;
+  title: string;
+  overview: string;
+  keyIdeas: string[];
+  commonMisconceptions: string[];
+  studyPrompt: string;
+  sources: LearningSource[];
+  grounding: "tavily" | "model_only";
 }
 
 /** Present only when the scan found a first divergence */
@@ -65,10 +102,14 @@ export interface Diagnosis {
   steps: ReasoningStep[];
   /** null means the reasoning was solid: no first divergence found */
   mixup: Mixup | null;
+  /** AI-authored opening turn for the adaptive repair conversation. */
+  repairPrompt: string;
   celebration: {
     headline: string;
     sub: string;
   };
+  /** Sources used as background when generating this diagnosis. */
+  learningContext?: LearningContext;
 }
 
 export type UnderstandingDepth =
@@ -105,9 +146,19 @@ export interface UnderstandingSignal {
 export interface UnderstandingEvaluation {
   depth: UnderstandingDepth;
   understandingDelta: number;
+  confidence: number;
+  conversationAction: "ask_follow_up" | "advance";
   feedbackToStudent: string;
   nextPrompt: string;
   evidence: string;
+}
+
+export interface RepairConversationTurn {
+  tutorPrompt: string;
+  studentAnswer: string;
+  tutorFeedback: string;
+  confidence: number;
+  conversationAction: "ask_follow_up" | "advance";
 }
 
 export type UnderstandingTurnMode =
@@ -127,6 +178,8 @@ export interface Homework {
   source?: "seeded" | "pdf";
   sourceFileName?: string;
   importedAt?: string;
+  /** Main topic and sources used to ground explanations for this worksheet. */
+  learningContext?: LearningContext;
 }
 
 /**
@@ -180,6 +233,12 @@ export interface ConceptNode {
   wobbly: boolean;
   /** How many problems in the course touch this concept */
   problemCount: number;
+  /** Problems that contributed curriculum or student evidence to this node. */
+  problemIds: string[];
+  /** 0..1 mastery before the student's recorded evidence in this course. */
+  baselineMastery: number;
+  /** Number of recorded student evidence signals touching this concept. */
+  evidenceCount: number;
   /** Most recent evidence signal that touched this concept */
   lastPracticedAt?: string | null;
   /** 0..1 temporal confidence after recency decay */

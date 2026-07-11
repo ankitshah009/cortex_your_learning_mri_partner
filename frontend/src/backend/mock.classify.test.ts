@@ -78,37 +78,37 @@ describe("question classification (student_question / default mode)", () => {
 });
 
 describe("cora_prompt_response classification", () => {
-  it("classifies 'next time' answers as memory_rule (+17)", async () => {
+  it("classifies 'next time' answers as memory_rule (+30)", async () => {
     const r = await evaluate(
       "Next time I will look at how long each part took",
       "cora_prompt_response",
     );
     expect(r.depth).toBe("memory_rule");
-    expect(r.understandingDelta).toBe(17);
+    expect(r.understandingDelta).toBe(30);
   });
 
-  it("classifies 'similar' answers as transfer_application (+20)", async () => {
+  it("classifies 'similar' answers as transfer_application (+32)", async () => {
     const r = await evaluate(
       "I could try a similar problem to be sure",
       "cora_prompt_response",
     );
     expect(r.depth).toBe("transfer_application");
-    expect(r.understandingDelta).toBe(20);
+    expect(r.understandingDelta).toBe(32);
   });
 
-  it("classifies long non-keyword answers (>= 8 words) as explanation_attempt (+13)", async () => {
+  it("classifies long non-keyword answers (>= 8 words) as explanation_attempt (+26)", async () => {
     const r = await evaluate(
       "the total distance divided by the total elapsed duration gives it",
       "cora_prompt_response",
     );
     expect(r.depth).toBe("explanation_attempt");
-    expect(r.understandingDelta).toBe(13);
+    expect(r.understandingDelta).toBe(26);
   });
 
-  it("classifies short non-keyword answers as surface_confusion (+5)", async () => {
+  it("classifies short non-keyword answers as surface_confusion (+8)", async () => {
     const r = await evaluate("no idea", "cora_prompt_response");
     expect(r.depth).toBe("surface_confusion");
-    expect(r.understandingDelta).toBe(5);
+    expect(r.understandingDelta).toBe(8);
   });
 
   it("includes Cora's prompt text in the classification (prompt keywords can trigger memory_rule)", async () => {
@@ -119,7 +119,7 @@ describe("cora_prompt_response classification", () => {
       "What will you remember to do?",
     );
     expect(r.depth).toBe("memory_rule");
-    expect(r.understandingDelta).toBe(17);
+    expect(r.understandingDelta).toBe(30);
   });
 
   it("uses question classification (not turn classification) when mode is student_question", async () => {

@@ -72,6 +72,36 @@ export function HomeworkPage() {
         <h1 className="font-display text-4xl font-extrabold leading-tight">
           {hw.emoji} {hw.title}
         </h1>
+        {hw.learningContext?.sources.length ? (
+          <section className="mt-4 rounded-3xl border-[3px] border-sky/30 bg-sky-soft/60 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-white px-3 py-1 font-display text-xs font-extrabold text-ink-soft">
+                Web-grounded topic
+              </span>
+              <strong className="font-display text-lg text-ink">
+                {hw.learningContext.mainTopic}
+              </strong>
+            </div>
+            {hw.learningContext.summary ? (
+              <p className="mt-2 text-sm font-semibold leading-relaxed text-ink-soft">
+                {hw.learningContext.summary}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs font-bold text-sky-dark">
+              {hw.learningContext.sources.slice(0, 3).map((source) => (
+                <a
+                  key={source.url}
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-sky/50 underline-offset-2 hover:text-ink"
+                >
+                  {source.title} ↗
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
         {/* Progress bar */}
         <div className="mt-4 flex items-center gap-3">
           <div className="h-5 flex-1 overflow-hidden rounded-full border-[3px] border-ink/10 bg-white">

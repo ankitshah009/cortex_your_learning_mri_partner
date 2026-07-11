@@ -10,7 +10,6 @@ import {
   SEEDED_LIBRARY,
   mergeHomeworkLibrary,
 } from "../scenarios/homework";
-import { getCustomProblem, isCustomProblem } from "../scenarios/custom";
 import {
   loadCreatedCourses,
   makeCourse,
@@ -55,15 +54,15 @@ function classifyTurn({
 
   const text = `${prompt ?? ""} ${question}`.toLowerCase();
   if (/\bnext time\b|\bremember\b|\bcheck\b|\brule\b|\bfuture\b/.test(text)) {
-    return { depth: "memory_rule" as const, understandingDelta: 17 };
+    return { depth: "memory_rule" as const, understandingDelta: 30 };
   }
   if (/\bnew\b|\bsimilar\b|\banother\b|\bwhat if\b|\bstill\b/.test(text)) {
-    return { depth: "transfer_application" as const, understandingDelta: 20 };
+    return { depth: "transfer_application" as const, understandingDelta: 32 };
   }
   if (question.trim().split(/\s+/).length >= 8) {
-    return { depth: "explanation_attempt" as const, understandingDelta: 13 };
+    return { depth: "explanation_attempt" as const, understandingDelta: 26 };
   }
-  return { depth: "surface_confusion" as const, understandingDelta: 5 };
+  return { depth: "surface_confusion" as const, understandingDelta: 8 };
 }
 
 /**
@@ -71,8 +70,7 @@ function classifyTurn({
  * The live adapter (live.ts) falls back to this on any failure.
  *
  * Courses the student creates are persisted to localStorage so the folder
- * structure survives reloads even without a live API. Custom problems also
- * resolve from localStorage, but they have no seeded diagnosis.
+ * structure survives reloads even without a live API.
  */
 let createdCourses = loadCreatedCourses();
 
@@ -101,11 +99,26 @@ export const mockProvider: DataProvider = {
     return library().homeworks;
   },
   async getProblem(problemId) {
-    const p = isCustomProblem(problemId)
-      ? getCustomProblem(problemId)
-      : PROBLEMS[problemId];
+    const p = PROBLEMS[problemId];
     if (!p) throw new Error(`Unknown problem: ${problemId}`);
     return p;
+  },
+  async getConceptBrief(input) {
+    return {
+      conceptId: input.conceptId,
+      title: input.label,
+      overview: `${input.label} connects the lecture ideas in ${input.courseTitle} to the problems the student is practicing. Start the Cortex API for a Tavily-grounded brief.`,
+      keyIdeas: [
+        `Connect ${input.label} to the exact quantities and relationships in each problem.`,
+        "Explain the reasoning, then test it on a slightly different example.",
+      ],
+      commonMisconceptions: [
+        "Applying a memorized procedure without checking when it is valid.",
+      ],
+      studyPrompt: `Explain ${input.label} using one of these homework problems in your own words.`,
+      sources: [],
+      grounding: "model_only" as const,
+    };
   },
   async importHomeworkPdf() {
     throw new Error(
@@ -118,7 +131,7 @@ export const mockProvider: DataProvider = {
     if (!d) throw new Error(`No seeded diagnosis for: ${problemId}`);
     return d;
   },
-  async evaluateStudentQuestion({ question, mode, prompt }) {
+  async evaluateStudentQuestion({ question, mode, prompt, conversation = [] }) {
     await delay(450);
     const { depth, understandingDelta } = classifyTurn({ question, mode, prompt });
     const strong =
@@ -129,9 +142,19 @@ export const mockProvider: DataProvider = {
       depth === "explanation_attempt" ||
       depth === "transfer_application" ||
       depth === "memory_rule";
+    const improvedAfterFollowUp =
+      conversation.length > 0 && question.trim().split(/\s+/).length >= 6;
+    const shouldAdvance = strong || improvedAfterFollowUp;
+    const confidence = shouldAdvance
+      ? Math.min(96, 86 + conversation.length * 4)
+      : Math.min(68, 38 + conversation.length * 8);
     return {
       depth,
       understandingDelta,
+      confidence,
+      conversationAction: shouldAdvance
+        ? "advance" as const
+        : "ask_follow_up" as const,
       feedbackToStudent: strong
         ? "That gives me evidence your brain is building the idea, not just copying a step."
         : "Good start. Add a why, when, or next-time check so the idea sticks.",

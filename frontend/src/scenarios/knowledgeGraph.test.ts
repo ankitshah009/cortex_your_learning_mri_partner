@@ -120,8 +120,14 @@ describe("buildCourseGraph", () => {
     expect(node.lastPracticedAt).toBeNull();
   });
 
-  it("connects co-occurring concepts with edge strength capped at 1", () => {
+  it("connects concepts co-occurring within a problem, with edge strength capped at 1", () => {
     const { course, library } = fixture({ p1: "speed", p2: "time" });
+    // Edges only form when concepts share a problem, so make "time" a related
+    // concept of p1. p2 alone (concept "time") must not create any edge.
+    library.problems.p1 = {
+      ...library.problems.p1,
+      relatedConceptIds: ["time"],
+    };
     const strongGraph = buildCourseGraph(
       course,
       library,
@@ -131,15 +137,28 @@ describe("buildCourseGraph", () => {
     expect(strongGraph.edges).toHaveLength(1);
     const strong = strongGraph.edges[0];
     expect([strong.source, strong.target].sort()).toEqual(["speed", "time"]);
-    // 0.3 + (0.95 + 0.95)/2 = 1.25 → capped at 1.
+    // 0.2 + 1 shared problem * 0.1 + (0.95 + 0.95)/2 = 1.25 → capped at 1.
     expect(strong.strength).toBe(1);
 
     const weakGraph = buildCourseGraph(course, library, {}, {});
+    expect(weakGraph.edges).toHaveLength(1);
     for (const edge of weakGraph.edges) {
       expect(edge.strength).toBeLessThanOrEqual(1);
-      // 0.3 + (0.2 + 0.2)/2 = 0.5 for unpracticed concepts.
+      // 0.2 + 1*0.1 + (0.2 + 0.2)/2 = 0.5 for unpracticed concepts.
       expect(edge.strength).toBeCloseTo(0.5, 5);
     }
+  });
+
+  it("does not connect concepts that never share a problem", () => {
+    const { course, library } = fixture({ p1: "speed", p2: "time" });
+    const graph = buildCourseGraph(
+      course,
+      library,
+      { p1: "solid", p2: "solid" },
+      { p1: understanding(100), p2: understanding(100) },
+    );
+    expect(graph.nodes.map((n) => n.id).sort()).toEqual(["speed", "time"]);
+    expect(graph.edges).toHaveLength(0);
   });
 
   it("falls back to concept 'math' when a problem has no conceptId", () => {

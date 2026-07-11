@@ -100,7 +100,9 @@ function Neuron({
   accent,
   firing,
   hovered,
+  active,
   onHover,
+  onSelect,
   animate,
 }: {
   node: PlacedNode;
@@ -109,12 +111,16 @@ function Neuron({
   firing: boolean;
   /** this neuron is currently hovered (show its label) */
   hovered: boolean;
+  /** this neuron is in an open concept chat: hold its glow + ripple */
+  active: boolean;
   onHover: (id: string | null) => void;
+  onSelect?: (id: string) => void;
   /** false on preview cards: no breathing/pulse, lower geometry detail */
   animate: boolean;
 }) {
   const ref = useRef<THREE.Mesh>(null);
   const haloRef = useRef<THREE.Mesh>(null);
+  const rippleRef = useRef<THREE.Mesh>(null);
   const fireStart = useRef<number | null>(null);
 
   const color = useMemo(
@@ -129,12 +135,12 @@ function Neuron({
 
   useFrame(({ clock }) => {
     if (!ref.current) return;
+    const t = clock.getElapsedTime();
 
     // Preview cards skip per-frame breathing/pulse; only the completion burst
     // (below) still animates so fired neurons stay visible everywhere.
     let scale = 1;
     if (animate) {
-      const t = clock.getElapsedTime();
       // Wobbly concepts pulse to say "come fix me"; strong ones breathe slowly.
       scale = node.wobbly ? 1 + Math.sin(t * 3) * 0.14 : 1 + Math.sin(t * 1.2) * 0.05;
     }
@@ -147,17 +153,32 @@ function Neuron({
       } else {
         fireStart.current = null;
       }
-    } else if (!animate) {
+    } else if (!animate && !active) {
       // Nothing to animate: leave the static scale untouched unless it drifted.
       if (ref.current.scale.x === 1) return;
     }
     ref.current.scale.setScalar(scale);
     if (haloRef.current) haloRef.current.scale.setScalar(scale * 1.5);
+
+    // Active neuron emits a repeating ripple ring: "this region is talking".
+    if (rippleRef.current) {
+      const mat = rippleRef.current.material as THREE.MeshBasicMaterial;
+      if (active) {
+        const phase = (t % 1.4) / 1.4;
+        rippleRef.current.scale.setScalar(1 + phase * 2.6);
+        mat.opacity = 0.35 * (1 - phase);
+      } else {
+        mat.opacity = 0;
+      }
+    }
   });
 
-  // Hovered neuron glows harder and grows so it's the clear focus.
+  // Hovered/active neuron glows harder and grows so it's the clear focus.
   const emissive =
-    (node.wobbly ? 0.5 : 0.6 + node.mastery * 1.0) + (hovered ? 0.8 : 0);
+    (node.wobbly ? 0.5 : 0.6 + node.mastery * 1.0) +
+    (hovered ? 0.8 : 0) +
+    (active ? 0.9 : 0);
+  const focused = hovered || active;
 
   return (
     <group position={node.position}>
@@ -173,9 +194,13 @@ function Neuron({
           onHover(null);
           document.body.style.cursor = "auto";
         }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect?.(node.id);
+        }}
       >
         <sphereGeometry
-          args={[hovered ? size * 1.35 : size, animate ? 24 : 12, animate ? 24 : 12]}
+          args={[focused ? size * 1.35 : size, animate ? 24 : 12, animate ? 24 : 12]}
         />
         <meshStandardMaterial
           color={color}
@@ -190,13 +215,23 @@ function Neuron({
         <meshBasicMaterial
           color={color}
           transparent
-          opacity={hovered ? 0.25 : node.wobbly ? 0.12 : 0.08}
+          opacity={focused ? 0.25 : node.wobbly ? 0.12 : 0.08}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {/* Labels only show on hover, so a dense brain stays readable. */}
-      {hovered && (
+      <mesh ref={rippleRef}>
+        <sphereGeometry args={[size * 1.4, 16, 16]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {/* Labels only show on hover/active, so a dense brain stays readable. */}
+      {focused && (
         <Html center zIndexRange={[30, 0]} style={{ pointerEvents: "none" }}>
           <div
             className="-translate-y-8 select-none whitespace-nowrap rounded-full border-2 px-3 py-1 text-center font-display text-sm font-extrabold shadow-[0_3px_0_rgba(63,46,86,0.12)]"
@@ -225,6 +260,7 @@ function Synapse({
   accent,
   phase,
   dimmed,
+  boosted,
   animate,
 }: {
   from: THREE.Vector3;
@@ -234,6 +270,8 @@ function Synapse({
   phase: number;
   /** faded because another concept is hovered and this isn't connected to it */
   dimmed: boolean;
+  /** brightened + sped up because it touches the concept being chatted with */
+  boosted: boolean;
   /** false on preview cards: no traveling signal bead, static line only */
   animate: boolean;
 }) {
@@ -263,17 +301,23 @@ function Synapse({
   );
 
   useFrame(({ clock }) => {
-    lineMaterial.opacity = (dimmed ? 0.03 : 0.12 + strength * 0.28);
+    lineMaterial.opacity = dimmed
+      ? 0.03
+      : boosted
+        ? Math.min(0.85, 0.4 + strength * 0.4)
+        : 0.12 + strength * 0.28;
     if (!animate || !pulseRef.current) return;
-    // A light bead travels from source to target on a loop.
-    const t = (clock.getElapsedTime() * 0.35 + phase) % 1;
+    // A light bead travels from source to target on a loop; activated
+    // synapses fire their signal roughly twice as fast.
+    const speed = boosted ? 0.75 : 0.35;
+    const t = (clock.getElapsedTime() * speed + phase) % 1;
     const p = curve.getPoint(t);
     pulseRef.current.position.copy(p);
     // Fade the bead in and out at the ends so it "arrives" and re-emits.
     const fade = Math.sin(t * Math.PI);
     (pulseRef.current.material as THREE.MeshBasicMaterial).opacity = dimmed
       ? 0
-      : fade * (0.4 + strength * 0.5);
+      : fade * (boosted ? 0.95 : 0.4 + strength * 0.5);
   });
 
   return (
@@ -302,11 +346,15 @@ function BrainScene({
   accent,
   interactive,
   firedIds,
+  activeId,
+  onNodeSelect,
 }: {
   graph: CourseGraph;
   accent: string;
   interactive: boolean;
   firedIds: Set<string>;
+  activeId?: string | null;
+  onNodeSelect?: (id: string) => void;
 }) {
   const placed = useMemo(() => placeNodes(graph), [graph]);
   const byId = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
@@ -315,10 +363,10 @@ function BrainScene({
 
   useFrame((_, delta) => {
     // Idle cards spin; the interactive brain also drifts, but pauses on hover
-    // so the reader can study the highlighted concept. Non-interactive cards
-    // render on a slow demand loop, so clamp delta to keep the spin smooth
-    // after long gaps (tab switches, throttled timers).
-    if (groupRef.current && (!interactive || hovered === null)) {
+    // or while a concept chat is open so the reader can study that concept.
+    // Non-interactive cards render on a slow demand loop, so clamp delta to
+    // keep the spin smooth after long gaps (tab switches, throttled timers).
+    if (groupRef.current && (!interactive || (hovered === null && !activeId))) {
       const step = Math.min(delta, 0.25);
       groupRef.current.rotation.y += step * (interactive ? 0.12 : 0.22);
     }
@@ -339,11 +387,13 @@ function BrainScene({
           const a = byId.get(edge.source);
           const b = byId.get(edge.target);
           if (!a || !b) return null;
-          // When a concept is hovered, only its own synapses stay lit.
-          const active =
-            hovered === null ||
-            edge.source === hovered ||
-            edge.target === hovered;
+          // When a concept is hovered or chatting, only its synapses stay lit.
+          const focus = hovered ?? activeId ?? null;
+          const connected =
+            focus === null || edge.source === focus || edge.target === focus;
+          const boosted =
+            !!activeId &&
+            (edge.source === activeId || edge.target === activeId);
           return (
             <Synapse
               key={`${edge.source}-${edge.target}`}
@@ -352,7 +402,8 @@ function BrainScene({
               strength={edge.strength}
               accent={accent}
               phase={(i * 0.137) % 1}
-              dimmed={!active}
+              dimmed={!connected}
+              boosted={boosted}
               animate={interactive}
             />
           );
@@ -364,7 +415,9 @@ function BrainScene({
             accent={accent}
             firing={firedIds.has(node.id)}
             hovered={hovered === node.id}
+            active={activeId === node.id}
             onHover={setHovered}
+            onSelect={onNodeSelect}
             animate={interactive}
           />
         ))}
@@ -373,7 +426,7 @@ function BrainScene({
         <OrbitControls
           enablePan={false}
           enableZoom
-          autoRotate={hovered === null}
+          autoRotate={hovered === null && !activeId}
           autoRotateSpeed={0.7}
           minDistance={4}
           maxDistance={14}
@@ -416,11 +469,16 @@ export function BrainGraph({
   color = "lav",
   interactive = true,
   className,
+  activeId,
+  onNodeSelect,
 }: {
   graph: CourseGraph;
   color?: CourseColor;
   interactive?: boolean;
   className?: string;
+  /** Concept currently open in a chat: its neuron ripples + synapses boost */
+  activeId?: string | null;
+  onNodeSelect?: (id: string) => void;
 }) {
   const accent = ACCENTS[color] ?? ACCENTS.lav;
   const fired = useFiredNodes(graph);
@@ -456,6 +514,8 @@ export function BrainGraph({
           accent={accent}
           interactive={interactive}
           firedIds={fired}
+          activeId={activeId}
+          onNodeSelect={onNodeSelect}
         />
       </Canvas>
     </div>

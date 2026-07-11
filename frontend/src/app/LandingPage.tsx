@@ -1,5 +1,3 @@
-import { Link } from "react-router-dom";
-
 /**
  * Cinematic marketing hero shown before the kids app.
  * One composition, one dominant CTA. Two motions total (fade-up + gradient
@@ -86,12 +84,13 @@ export function LandingPage({ onEnter }: { onEnter: () => void }) {
             >
               Enter Cortex &rarr;
             </button>
-            <Link
-              to="/custom"
-              className="text-base font-semibold text-[#aaa3c8] underline decoration-white/25 underline-offset-4 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b9b1e6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a1a] rounded-sm"
+            <button
+              type="button"
+              onClick={onEnter}
+              className="cursor-pointer text-base font-semibold text-[#aaa3c8] underline decoration-white/25 underline-offset-4 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b9b1e6] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a1a] rounded-sm"
             >
-              or try any problem
-            </Link>
+              or upload your own homework
+            </button>
           </div>
         </main>
 

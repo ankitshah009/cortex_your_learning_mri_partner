@@ -21,6 +21,10 @@ The product must be reliable enough for a live demonstration and honest enough t
 | Butterbase persistence | Session record is visible | P0 |
 | Small laptop viewport | Main diagnosis remains readable | P1 |
 | Voice input | Transcript reaches same flow | P2 |
+| Concept node click | Opens the matching student + grounded topic view | P0 |
+| Tavily concept brief | Returns sources and homework-specific synthesis | P0 |
+| Before/Now toggle | Preserves node layout and changes mastery state | P1 |
+| Reset test progress | Clears evidence but preserves uploaded coursework | P0 |
 
 ## 3. Demo reliability checklist
 
@@ -34,6 +38,17 @@ Run five consecutive end-to-end tests on the deployed URL:
 6. intervention renders;
 7. session appears in Butterbase;
 8. reset works.
+
+### Grounded graph test
+
+1. Confirm `GET /health` returns `"tavilyConfigured": true`.
+2. Open a course and click a concept neuron.
+3. Confirm the panel shows linked homework and a loading state.
+4. Confirm the brief is labeled **Tavily + AI** and includes relevant sources.
+5. Solve a linked problem, return, and compare **Before** with **Now**. Student
+   mastery should change; Tavily background must not count as student evidence.
+6. Use **Reset test progress** twice. The brain should return to baseline while
+   uploaded homework remains.
 
 Also force one model failure and verify the golden fallback.
 

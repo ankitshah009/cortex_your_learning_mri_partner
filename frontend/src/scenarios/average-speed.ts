@@ -79,6 +79,8 @@ export const rexDiagnosis: Diagnosis = {
       "step-answer": "Average speed = 4 m/s ✓",
     },
   },
+  repairPrompt:
+    "Explain why averaging 6 m/s and 3 m/s directly gives the wrong result for Rex's round trip.",
   celebration: {
     headline: "Mix-up fixed! Your brain grew!",
     sub: "You found the Speed-Smoothie Mix-up and repaired it. Speed Springs just got brighter!",

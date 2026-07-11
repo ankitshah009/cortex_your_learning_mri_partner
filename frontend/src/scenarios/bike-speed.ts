@@ -38,6 +38,8 @@ export const bikeDiagnosis: Diagnosis = {
     },
   ],
   mixup: null,
+  repairPrompt:
+    "Why does doubling 12 kilometers correctly convert Mia's half-hour ride into kilometers per hour?",
   celebration: {
     headline: "Rock solid! No mix-ups!",
     sub: "Cora traced every step of Mia's Bike Ride and your path is strong. On to the next one!",

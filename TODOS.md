@@ -81,3 +81,5 @@ Plan: `~/.gstack/projects/ankitshah009-cortex_your_learning_mri_partner/ceo-plan
 - [ ] **Teacher dashboard UI** — API-first strategy; partners render their own views.
 - [ ] **Multi-domain expansion** — gated on the first domain meeting the eval bar
   (first-divergence agreement ≥75%, ECE ≤ 0.10).
+
+- [ ] **Implement /api/concept-brief in functions/api.** Phong's concept chat calls it via the ?path= router; the deployed function lacks the route, so live concept briefs currently fall back to the local heuristic (safe but not real LLM). Port the cortex-api.mjs concept-brief handler.

@@ -18,7 +18,6 @@ import {
   READING_WAIT_LINES,
 } from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
-import { UNDERSTANDING_MASTERY_THRESHOLD } from "../learning/understanding";
 
 /** Remounts the scan for every problem so all state starts fresh */
 export function SolvePage() {
@@ -32,9 +31,6 @@ function SolveScan({ problemId }: { problemId: string }) {
   const markCompleted = useApp((s) => s.markCompleted);
   const addUnderstandingSignal = useApp((s) => s.addUnderstandingSignal);
   const { library } = useHomeworkLibrary();
-  const understandingScore = useApp(
-    (s) => s.understandingByProblem[problemId]?.score ?? 0,
-  );
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
@@ -96,14 +92,11 @@ function SolveScan({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
-    // A solid diagnosis (no mix-up) skips the whole diagnosis arc, so the
-    // understanding score can't reach the mastery threshold on this scan —
-    // solid reasoning alone earns completion. The mixup path still requires
-    // mastery, which RepairLab provides the route to.
-    const masteryReached =
-      diagnosis.mixup === null ||
-      understandingScore >= UNDERSTANDING_MASTERY_THRESHOLD;
-    if (stage === "celebrated" && masteryReached && !celebratedRef.current) {
+    // Reaching "celebrated" is gated upstream: the mixup path only advances
+    // through RepairLab once the understanding meter crosses the mastery
+    // threshold, and a solid diagnosis skips the arc entirely — so both
+    // paths may celebrate (and complete) unconditionally here.
+    if (stage === "celebrated" && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
       markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
@@ -131,7 +124,6 @@ function SolveScan({ problemId }: { problemId: string }) {
     diagnosis,
     markCompleted,
     addUnderstandingSignal,
-    understandingScore,
   ]);
 
   // Presenter keys: arrows drive the demo, r restarts

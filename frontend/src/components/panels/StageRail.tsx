@@ -5,6 +5,7 @@ import type {
   Diagnosis,
   HomeworkLibrary,
   Problem,
+  RepairConversationTurn,
   UnderstandingSignal,
 } from "../../scenarios/types";
 import {
@@ -17,7 +18,6 @@ import { useApp } from "../../state/store";
 import { useStage, type Stage } from "../../stages/stageMachine";
 import { ChunkyButton } from "../ui/ChunkyButton";
 import { useCountUp } from "../../lib/useCountUp";
-import { UNDERSTANDING_MASTERY_THRESHOLD } from "../../learning/understanding";
 
 function Card({
   children,
@@ -99,18 +99,9 @@ export function StageCard({
   const mixup = diagnosis.mixup;
 
   return (
-    <>
-      <AnimatePresence mode="wait">
-        <div key={stage}>{renderStage(stage)}</div>
-      </AnimatePresence>
-      <UnderstandingPanel
-        problem={problem}
-        diagnosis={diagnosis}
-        score={understanding.score}
-        signals={understanding.signals}
-        onSignal={(signal) => addUnderstandingSignal(problem.id, signal)}
-      />
-    </>
+    <AnimatePresence mode="wait">
+      <div key={stage}>{renderStage(stage)}</div>
+    </AnimatePresence>
   );
 
   function renderStage(stage: Stage) {
@@ -308,27 +299,6 @@ export function StageCard({
       case "celebrated": {
         const next = nextProblemAfter(problem.id, completed, library);
         const hw = homeworkForProblem(problem.id, library);
-        if (understanding.score < UNDERSTANDING_MASTERY_THRESHOLD) {
-          return (
-            <Card tone="sun">
-              <p className="font-display text-xl font-extrabold">
-                Almost there
-              </p>
-              <p className="mt-2 text-sm font-semibold leading-relaxed">
-                Cora needs a little more proof before this problem counts as
-                learned. Answer a repair prompt or ask a deeper question to fill
-                the meter.
-              </p>
-              <ChunkyButton
-                variant="coral"
-                className="mt-4 w-full"
-                onClick={() => goTo("repairing")}
-              >
-                Keep proving it
-              </ChunkyButton>
-            </Card>
-          );
-        }
         return (
           <Card tone="teal">
             <p className="font-display text-2xl font-extrabold leading-tight">
@@ -394,19 +364,26 @@ function RepairLab({
   onSignal: (signal: SignalInput) => void;
   onComplete: () => void;
 }) {
-  const prompts = repairPrompts(problem, diagnosis);
-  const [promptIndex, setPromptIndex] = useState(0);
+  const opening = {
+    text: diagnosis.repairPrompt,
+    kind: "lesson_reflection" as const,
+    signalLabel: diagnosis.mixup ? "Explained the mix-up" : "Explained method",
+  };
   const [answer, setAnswer] = useState("");
   const [checking, setChecking] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [nextPrompt, setNextPrompt] = useState<string | null>(null);
-  const prompt = prompts[promptIndex % prompts.length];
-  const needed = Math.max(0, UNDERSTANDING_MASTERY_THRESHOLD - score);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPrompt, setCurrentPrompt] = useState(opening.text);
+  const [conversation, setConversation] = useState<RepairConversationTurn[]>([]);
+  const [decision, setDecision] = useState<
+    "ask_follow_up" | "advance" | null
+  >(null);
+  const latestConfidence = conversation.at(-1)?.confidence;
 
   async function submitProof() {
     const text = answer.trim();
     if (text.length < 8 || checking) return;
     setChecking(true);
+    setError(null);
     try {
       const result = await backend.evaluateStudentQuestion({
         problem,
@@ -414,30 +391,40 @@ function RepairLab({
         question: text,
         currentUnderstanding: score,
         mode: "cora_prompt_response",
-        prompt: prompt.text,
+        prompt: currentPrompt,
+        conversation,
       });
       onSignal({
-        kind: prompt.kind,
-        label: prompt.signalLabel,
+        kind: opening.kind,
+        label: opening.signalLabel,
         delta: result.understandingDelta,
         depth: result.depth,
         feedbackToStudent: result.feedbackToStudent,
-        nextPrompt: result.nextPrompt,
+        nextPrompt:
+          result.conversationAction === "ask_follow_up"
+            ? result.nextPrompt
+            : undefined,
         evidence: result.evidence,
       });
-      setFeedback(result.feedbackToStudent);
-      setNextPrompt(result.nextPrompt);
+      const turn: RepairConversationTurn = {
+        tutorPrompt: currentPrompt,
+        studentAnswer: text,
+        tutorFeedback: result.feedbackToStudent,
+        confidence: result.confidence,
+        conversationAction: result.conversationAction,
+      };
+      setConversation((turns) => [...turns, turn]);
+      setDecision(result.conversationAction);
       setAnswer("");
-      if (score + result.understandingDelta < UNDERSTANDING_MASTERY_THRESHOLD) {
-        setPromptIndex((i) => i + 1);
+      if (result.conversationAction === "ask_follow_up") {
+        setCurrentPrompt(result.nextPrompt);
       }
     } catch (err) {
-      setFeedback(
+      setError(
         err instanceof Error
           ? err.message
           : "Cora couldn't check that proof yet.",
       );
-      setNextPrompt(null);
     } finally {
       setChecking(false);
     }
@@ -451,248 +438,99 @@ function RepairLab({
             Repair lab
           </p>
           <p className="mt-1 font-display text-xl font-extrabold leading-tight">
-            Prove it before it counts
+            Talk it through
           </p>
         </div>
         <span className="shrink-0 rounded-full border-2 border-teal/40 bg-white px-3 py-1 font-display text-sm font-extrabold text-teal-dark">
-          need {needed}%
+          {latestConfidence === undefined
+            ? "adaptive check"
+            : `Cora ${latestConfidence}% sure`}
         </span>
       </div>
 
-      <div className="mt-4 rounded-2xl border-2 border-teal/40 bg-white p-3">
-        <p className="text-xs font-extrabold uppercase tracking-wide text-teal-dark">
-          Cora asks
-        </p>
-        <p className="mt-1 text-sm font-extrabold leading-snug">
-          {prompt.text}
-        </p>
-      </div>
-
-      <textarea
-        value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
-        rows={3}
-        placeholder="Explain it like you're teaching your future self..."
-        className="mt-3 w-full resize-none rounded-2xl border-[3px] border-ink/10 bg-white p-3 text-sm font-bold leading-relaxed outline-none transition-colors focus:border-teal"
-      />
-      <ChunkyButton
-        variant="teal"
-        className="mt-3 w-full"
-        onClick={submitProof}
-        disabled={answer.trim().length < 8 || checking}
-      >
-        {checking ? "Checking proof..." : "Check my proof"}
-      </ChunkyButton>
-
-      {feedback && (
-        <div className="mt-3 rounded-2xl border-2 border-sun-dark/30 bg-sun-soft p-3">
-          <p className="text-sm font-bold leading-snug">{feedback}</p>
-          {nextPrompt && (
-            <p className="mt-2 text-sm font-extrabold leading-snug text-sun-dark">
-              {nextPrompt}
-            </p>
-          )}
-        </div>
-      )}
-
-      <ChunkyButton
-        variant={score >= UNDERSTANDING_MASTERY_THRESHOLD ? "coral" : "ghost"}
-        className="mt-4 w-full"
-        onClick={onComplete}
-        disabled={score < UNDERSTANDING_MASTERY_THRESHOLD}
-      >
-        {score >= UNDERSTANDING_MASTERY_THRESHOLD
-          ? "Lock it in"
-          : "Fill the meter to unlock"}
-      </ChunkyButton>
-    </Card>
-  );
-}
-
-function repairPrompts(problem: Problem, diagnosis: Diagnosis) {
-  if (!diagnosis.mixup) {
-    return [
-      {
-        text: `Explain why your method works for ${problem.title}.`,
-        kind: "lesson_reflection" as const,
-        signalLabel: "Explained method",
-      },
-      {
-        text: "What is one similar problem where this strategy would still work?",
-        kind: "transfer" as const,
-        signalLabel: "Applied transfer",
-      },
-      {
-        text: "What should your future brain remember when it sees this kind of problem?",
-        kind: "lesson_reflection" as const,
-        signalLabel: "Wrote memory rule",
-      },
-    ];
-  }
-
-  const { mixup } = diagnosis;
-  return [
-    {
-      text: `Why was "${mixup.hypothesis.name}" the shaky part of the first solution?`,
-      kind: "lesson_reflection" as const,
-      signalLabel: "Explained the mix-up",
-    },
-    {
-      text: "Write the tiny rule your future brain should remember before solving this kind of problem.",
-      kind: "lesson_reflection" as const,
-      signalLabel: "Wrote memory rule",
-    },
-    {
-      text: `${mixup.probe.question} Explain the check you would use, not just the answer.`,
-      kind: "transfer" as const,
-      signalLabel: "Applied transfer",
-    },
-  ];
-}
-
-function UnderstandingPanel({
-  problem,
-  diagnosis,
-  score,
-  signals,
-  onSignal,
-}: {
-  problem: Problem;
-  diagnosis: Diagnosis;
-  score: number;
-  signals: UnderstandingSignal[];
-  onSignal: (signal: SignalInput) => void;
-}) {
-  const shown = useCountUp(score);
-  const [question, setQuestion] = useState("");
-  const [asking, setAsking] = useState(false);
-  const [lastFeedback, setLastFeedback] = useState<string | null>(null);
-  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
-  const latestSignals = signals.slice(-4).reverse();
-
-  async function askCora() {
-    const text = question.trim();
-    if (text.length < 4 || asking) return;
-    setAsking(true);
-    try {
-      const result = await backend.evaluateStudentQuestion({
-        problem,
-        diagnosis,
-        question: text,
-        currentUnderstanding: score,
-      });
-      onSignal({
-        kind: "student_question",
-        label: depthLabel(result.depth),
-        delta: result.understandingDelta,
-        depth: result.depth,
-        feedbackToStudent: result.feedbackToStudent,
-        nextPrompt: result.nextPrompt,
-        evidence: result.evidence,
-      });
-      setLastFeedback(result.feedbackToStudent);
-      setLastPrompt(result.nextPrompt);
-      setQuestion("");
-    } catch (err) {
-      setLastFeedback(
-        err instanceof Error
-          ? err.message
-          : "I couldn't evaluate that question yet.",
-      );
-      setLastPrompt(null);
-    } finally {
-      setAsking(false);
-    }
-  }
-
-  return (
-    <Card tone="white">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="font-display text-lg font-extrabold">
-          Understanding
-        </p>
-        <span className="font-display text-xl font-extrabold text-teal-dark">
-          {shown}%
-        </span>
-      </div>
-      <p className="mt-1 text-xs font-bold text-ink-soft">
-        Fill to {UNDERSTANDING_MASTERY_THRESHOLD}% with proof before moving on.
+      <p className="mt-3 text-sm font-semibold leading-relaxed text-ink-soft">
+        Cora will ask only what she still needs to understand.
       </p>
-      <div className="mt-2 h-4 overflow-hidden rounded-full border-2 border-ink/10 bg-cloud-soft">
-        <motion.div
-          className="h-full rounded-full bg-teal"
-          initial={false}
-          animate={{ width: `${score}%` }}
-          transition={{ duration: 0.7, ease: "easeOut" }}
-        />
-      </div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {latestSignals.length ? (
-          latestSignals.map((signal) => (
-            <span
-              key={signal.id}
-              className="rounded-full border-2 border-teal/30 bg-teal-soft px-2.5 py-1 text-xs font-extrabold text-teal-dark"
-            >
-              +{signal.delta} {signal.label}
-            </span>
-          ))
-        ) : (
-          <span className="rounded-full border-2 border-ink/10 bg-cloud-soft px-2.5 py-1 text-xs font-extrabold text-ink-soft">
-            Waiting for evidence
-          </span>
+
+      <div className="mt-4 flex flex-col gap-3">
+        {conversation.map((turn, index) => (
+          <div key={`${index}-${turn.tutorPrompt}`} className="flex flex-col gap-2">
+            <ConversationBubble speaker="Cora" tone="cora">
+              {turn.tutorPrompt}
+            </ConversationBubble>
+            <ConversationBubble speaker="You" tone="student">
+              {turn.studentAnswer}
+            </ConversationBubble>
+            <ConversationBubble speaker="Cora" tone="feedback">
+              {turn.tutorFeedback}
+            </ConversationBubble>
+          </div>
+        ))}
+
+        {decision !== "advance" && (
+          <ConversationBubble speaker="Cora asks" tone="cora">
+            {currentPrompt}
+          </ConversationBubble>
         )}
       </div>
 
-      <div className="mt-4 rounded-2xl border-2 border-lav/30 bg-lav-soft p-3">
-        <label
-          htmlFor="student-question"
-          className="font-display text-sm font-extrabold text-lav-dark"
-        >
-          Ask Cora a smart question
-        </label>
-        <textarea
-          id="student-question"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          rows={2}
-          placeholder="Why does this shortcut fail here?"
-          className="mt-2 w-full resize-none rounded-2xl border-[3px] border-ink/10 bg-white p-3 text-sm font-bold leading-relaxed outline-none transition-colors focus:border-lav"
-        />
+      {decision !== "advance" ? (
+        <>
+          <textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            rows={3}
+            placeholder="Answer Cora's question..."
+            className="mt-3 w-full resize-none rounded-2xl border-[3px] border-ink/10 bg-white p-3 text-sm font-bold leading-relaxed outline-none transition-colors focus:border-teal"
+          />
+          <ChunkyButton
+            variant="teal"
+            className="mt-3 w-full"
+            onClick={submitProof}
+            disabled={answer.trim().length < 8 || checking}
+          >
+            {checking ? "Cora is thinking..." : "Send answer"}
+          </ChunkyButton>
+        </>
+      ) : (
         <ChunkyButton
-          variant="lav"
-          className="mt-2 w-full"
-          onClick={askCora}
-          disabled={question.trim().length < 4 || asking}
+          variant="coral"
+          className="mt-4 w-full"
+          onClick={onComplete}
         >
-          {asking ? "Thinking..." : "Ask Cora"}
+          Continue
         </ChunkyButton>
-      </div>
+      )}
 
-      {lastFeedback && (
-        <div className="mt-3 rounded-2xl border-2 border-sun-dark/30 bg-sun-soft p-3">
-          <p className="text-sm font-bold leading-snug">{lastFeedback}</p>
-          {lastPrompt && (
-            <p className="mt-2 text-sm font-extrabold leading-snug text-sun-dark">
-              {lastPrompt}
-            </p>
-          )}
-        </div>
+      {error && (
+        <p className="mt-3 rounded-2xl border-2 border-coral/30 bg-coral-soft p-3 text-sm font-bold leading-snug">
+          {error}
+        </p>
       )}
     </Card>
   );
 }
 
-function depthLabel(depth: string) {
-  const labels: Record<string, string> = {
-    surface_confusion: "Named confusion",
-    procedural_question: "Asked a step question",
-    conceptual_question: "Asked why",
-    contrast_question: "Compared cases",
-    transfer_question: "Asked transfer",
-    metacognitive_question: "Asked how to remember",
-    explanation_attempt: "Explained it back",
-    transfer_application: "Applied transfer",
-    memory_rule: "Made memory rule",
+function ConversationBubble({
+  speaker,
+  tone,
+  children,
+}: {
+  speaker: string;
+  tone: "cora" | "student" | "feedback";
+  children: React.ReactNode;
+}) {
+  const tones = {
+    cora: "border-teal/40 bg-white",
+    student: "ml-6 border-lav/30 bg-lav-soft",
+    feedback: "border-sun-dark/30 bg-sun-soft",
   };
-  return labels[depth] ?? "Asked a question";
+  return (
+    <div className={`rounded-2xl border-2 p-3 ${tones[tone]}`}>
+      <p className="text-xs font-extrabold uppercase tracking-wide text-teal-dark">
+        {speaker}
+      </p>
+      <p className="mt-1 text-sm font-bold leading-snug">{children}</p>
+    </div>
+  );
 }

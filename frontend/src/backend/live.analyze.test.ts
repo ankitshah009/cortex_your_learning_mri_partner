@@ -10,8 +10,26 @@ import {
 } from "vitest";
 import { makeLiveProvider, type LiveDiagnosis } from "./live";
 import { DIAGNOSES } from "../scenarios/homework";
-import { saveCustomProblem } from "../scenarios/custom";
-import type { Diagnosis } from "../scenarios/types";
+import type { Diagnosis, Problem } from "../scenarios/types";
+
+/** Seed a PDF-imported problem into the live provider's localStorage library
+ *  (PDF problems have no seeded diagnosis, so live failures rethrow). */
+const seedPdfProblem = (id = "pdf-problem-1"): Problem => {
+  const problem = {
+    id,
+    conceptId: "custom",
+    title: "Imported",
+    emoji: "📄",
+    statement: "s",
+    sampleReasoning: "r",
+    source: "pdf",
+  } as Problem;
+  localStorage.setItem(
+    "cortex-imported-homework-library",
+    JSON.stringify({ courses: [], homeworks: [], problems: { [id]: problem } }),
+  );
+  return problem;
+};
 
 const ANALYZE_URL = "https://fake.test/analyze";
 const SEEDED_ID = "average-speed";
@@ -20,6 +38,7 @@ const liveDiagnosis = (problemId = "whatever-the-server-said"): Diagnosis => ({
   problemId,
   steps: [{ id: "s1", kind: "claim", label: "step", caption: "cap" }],
   mixup: null,
+  repairPrompt: "Walk me through your first step.",
   celebration: { headline: "Nice!", sub: "Solid reasoning." },
 });
 
@@ -100,27 +119,19 @@ describe("live provider analyzeReasoning", () => {
     ).resolves.toEqual(seededFallback());
   });
 
-  it("rethrows failures for custom problems (no seed to fall back to)", async () => {
-    const custom = saveCustomProblem({
-      title: "Mine",
-      statement: "s",
-      sampleReasoning: "r",
-    });
+  it("rethrows failures for PDF-imported problems (no seed to fall back to)", async () => {
+    const pdf = seedPdfProblem();
     fetchMock.mockRejectedValue(new TypeError("network down"));
     await expect(
-      provider().analyzeReasoning(custom.id, "r"),
+      provider().analyzeReasoning(pdf.id, "r"),
     ).rejects.toThrow("network down");
   });
 
-  it("returns a live diagnosis for custom problems when the endpoint succeeds", async () => {
-    const custom = saveCustomProblem({
-      title: "Mine",
-      statement: "s",
-      sampleReasoning: "r",
-    });
+  it("returns a live diagnosis for PDF-imported problems when the endpoint succeeds", async () => {
+    const pdf = seedPdfProblem();
     fetchMock.mockResolvedValue(okResponse(liveDiagnosis()));
-    const result = await provider().analyzeReasoning(custom.id, "r");
-    expect(result.problemId).toBe(custom.id);
+    const result = await provider().analyzeReasoning(pdf.id, "r");
+    expect(result.problemId).toBe(pdf.id);
   });
 
   it("rejects for unknown problem ids before any fetch happens", async () => {
