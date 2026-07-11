@@ -31,20 +31,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Butterbase CLI
-        run: npm install -g @butterbase/cli
-
-      - name: Configure Butterbase CLI auth
+      - name: Deploy analyze function (REST)
         run: |
-          butterbase config set endpoint https://api.butterbase.ai
-          butterbase config set apiKey "$BUTTERBASE_API_KEY"
-
-      - name: Deploy analyze function
-        run: butterbase functions deploy functions/analyze/index.ts --name analyze --app "$APP_ID"
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          app_id = os.environ["APP_ID"]
+          key = os.environ["BUTTERBASE_API_KEY"]
+          payload = {
+              "name": "analyze",
+              "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
+              "code": open("functions/analyze/index.ts").read(),
+              "timeoutMs": 60000,
+              "envVars": {"BUTTERBASE_API_KEY": key, "MODEL": "openai/gpt-4o-mini"},
+              "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
+          }
+          req = urllib.request.Request(
+              f"https://api.butterbase.ai/v1/{app_id}/functions",
+              data=json.dumps(payload).encode(),
+              headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=120) as res:
+              body = json.load(res)
+          print("deployed:", body.get("name"), "->", body.get("url"))
+          EOF
 
       - name: Smoke-test the deployed function
         run: |
