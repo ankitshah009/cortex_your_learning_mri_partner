@@ -149,9 +149,56 @@ function toBase64(buf: ArrayBuffer): string {
 function extractJson(text: string): any {
   const cleaned = text.replace(/```json/gi, "```").replace(/```/g, "").trim();
   const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end <= start) throw new Error("no JSON object in response");
-  return JSON.parse(cleaned.slice(start, end + 1));
+  if (start === -1) throw new Error("no JSON object in response");
+  const candidate = cleaned.slice(start);
+  const end = candidate.lastIndexOf("}");
+  if (end > 0) {
+    try {
+      return JSON.parse(candidate.slice(0, end + 1));
+    } catch {
+      // Fall through: output was likely cut at the max-token limit.
+    }
+  }
+  return salvageTruncatedJson(candidate);
+}
+
+/**
+ * Close off model output that was cut at the max-token limit: walk the text
+ * tracking string/escape state and open brackets, remember each point where
+ * a value closed cleanly, then drop the incomplete tail and append the
+ * missing closers. Dense PDFs can overflow any budget, so a truncated
+ * question list degrades to "fewer questions" instead of a failed import.
+ */
+function salvageTruncatedJson(text: string): any {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  const cuts: Array<{ end: number; closers: string }> = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") stack.push("}");
+    else if (ch === "[") stack.push("]");
+    else if (ch === "}" || ch === "]") {
+      stack.pop();
+      cuts.push({ end: i + 1, closers: [...stack].reverse().join("") });
+    }
+  }
+  // Prefer the longest salvage; parse failures walk back to earlier cuts.
+  for (let c = cuts.length - 1; c >= 0 && c >= cuts.length - 24; c--) {
+    try {
+      return JSON.parse(text.slice(0, cuts[c].end) + cuts[c].closers);
+    } catch {
+      // Try the previous clean cut.
+    }
+  }
+  throw new Error("model returned unparseable JSON");
 }
 
 /* ------------------------------------------------------------------ */
@@ -396,7 +443,9 @@ async function extractQuestionsFromPdf(
           { role: "system", content: EXTRACTION_SYSTEM_PROMPT },
           { role: "user", content },
         ],
-        { model, maxTokens: 2400, temperature: 0.1 },
+        // Dense worksheets need room: 12 questions with full statements can
+        // overflow 2400 output tokens and truncate the JSON mid-array.
+        { model, maxTokens: 6000, temperature: 0.1 },
       );
       lastError = null;
       break;
