@@ -6,6 +6,13 @@
       "headers": {
         "Authorization": "Bearer bb_sk_7d37358c3f57c5c6aec6776266c4f249047b74d1"
       }
+    },
+    "shadcn": {
+      "command": "npx",
+      "args": [
+        "shadcn@latest",
+        "mcp"
+      ]
     }
   }
 }

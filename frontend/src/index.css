@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Baloo 2", "Nunito", system-ui, sans-serif;
+  --font-body: "Nunito", system-ui, sans-serif;
+
+  /* Cortex Kids palette: warm cream base, semantic learning-state accents */
+  --color-cream: #fff6ea;
+  --color-ink: #3f2e56;
+  --color-ink-soft: #7a6a99;
+  --color-coral: #ff6b6b;
+  --color-coral-dark: #e04f55;
+  --color-coral-soft: #ffe3e0;
+  --color-teal: #2ec4b6;
+  --color-teal-dark: #1fa093;
+  --color-teal-soft: #d9f5f1;
+  --color-sun: #ffc94d;
+  --color-sun-dark: #d99a14;
+  --color-sun-soft: #fff1cf;
+  --color-lav: #9b8cff;
+  --color-lav-dark: #7a68e8;
+  --color-lav-soft: #eceaff;
+  --color-sky: #bde9ff;
+  --color-sky-deep: #7ed3f7;
+  --color-cloud: #cfc9de;
+  --color-cloud-soft: #edeaf4;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Learning-state motion vocabulary. Each animation means one thing:
+   wobble = "this idea is shaky", floaty = idle life, pop = arrival,
+   bloom = repaired and stronger. */
+@media (prefers-reduced-motion: no-preference) {
+  .anim-wobble {
+    animation: wobble 0.9s ease-in-out infinite;
+    transform-origin: 50% 90%;
+  }
+  .anim-floaty {
+    animation: floaty 3.2s ease-in-out infinite;
+  }
+  .anim-bounce-soft {
+    animation: bounce-soft 1.4s ease-in-out infinite;
+  }
+  .anim-dash-flow {
+    animation: dash-flow 0.9s linear infinite;
+  }
+  .anim-pulse-ring {
+    animation: pulse-ring 1.5s ease-out infinite;
+  }
+}
+
+@keyframes wobble {
+  0%,
+  100% {
+    transform: rotate(-2.4deg);
+  }
+  50% {
+    transform: rotate(2.4deg);
+  }
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes bounce-soft {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.06);
+  }
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 201, 77, 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(255, 201, 77, 0);
+  }
+}
+
+/* React Flow canvas: keep the library chrome invisible, our bubbles do the talking */
+.react-flow__node {
+  cursor: default !important;
+}
+.react-flow__pane {
+  cursor: grab;
+}
+.react-flow__attribution {
+  background: transparent;
+  opacity: 0.4;
+}
