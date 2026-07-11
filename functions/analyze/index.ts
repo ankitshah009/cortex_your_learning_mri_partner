@@ -21,8 +21,8 @@
  *      if still invalid return HTTP 500 so the frontend falls back.
  *
  * Env (set at deploy time):
- *   BUTTERBASE_API_KEY  — bb_sk_* key with ai:gateway scope (required)
- *   MODEL               — AI gateway model id (default: openai/gpt-4o-mini)
+ *   AI_GATEWAY_KEY  — bb_sk_* key scoped to this app + ai:gateway (required)
+ *   MODEL           — AI gateway model id (default: openai/gpt-4o-mini)
  *   BUTTERBASE_APP_ID / BUTTERBASE_API_URL are auto-injected by the runtime.
  */
 
@@ -246,15 +246,15 @@ function extractJson(text: string): any {
 }
 
 async function chat(ctx: any, messages: any[]): Promise<string> {
-  const { BUTTERBASE_APP_ID, BUTTERBASE_API_URL, BUTTERBASE_API_KEY, MODEL } =
-    ctx.env;
+  const { BUTTERBASE_APP_ID, BUTTERBASE_API_URL, MODEL } = ctx.env;
+  const gatewayKey = ctx.env.AI_GATEWAY_KEY || ctx.env.BUTTERBASE_API_KEY;
   const res = await fetch(
     `${BUTTERBASE_API_URL}/v1/${BUTTERBASE_APP_ID}/chat/completions`,
     {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${BUTTERBASE_API_KEY}`,
+        Authorization: `Bearer ${gatewayKey}`,
       },
       body: JSON.stringify({
         model: MODEL || "openai/gpt-4o-mini",
