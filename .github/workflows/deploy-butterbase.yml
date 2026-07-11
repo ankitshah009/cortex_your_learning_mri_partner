@@ -57,7 +57,7 @@ jobs:
                   "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
                   "code": open("functions/analyze/index.ts").read(),
                   "timeoutMs": 60000,
-                  "envVars": {"AI_GATEWAY_KEY": ai_key, "MODEL": "openai/gpt-4o-mini"},
+                  "envVars": {"AI_GATEWAY_KEY": ai_key, "MODEL": "anthropic/claude-haiku-4.5"},
                   "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
               },
               {
@@ -68,7 +68,7 @@ jobs:
                   "memoryLimitMb": 512,
                   "envVars": {
                       "AI_GATEWAY_KEY": ai_key,
-                      "MODEL": "openai/gpt-4o-mini",
+                      "MODEL": "anthropic/claude-haiku-4.5",
                       "EXTRACTION_MODEL": "anthropic/claude-haiku-4.5",
                   },
                   # No method restriction: the router serves GET and POST.
