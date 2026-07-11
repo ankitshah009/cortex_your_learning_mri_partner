@@ -164,7 +164,7 @@ interface ChatOpts {
   temperature?: number;
 }
 
-async function chat(ctx: any, messages: any[], opts: ChatOpts): Promise<string> {
+async function gatewayChat(ctx: any, messages: any[], opts: ChatOpts): Promise<string> {
   const { BUTTERBASE_APP_ID, BUTTERBASE_API_URL } = ctx.env;
   const gatewayKey = ctx.env.AI_GATEWAY_KEY;
   if (!gatewayKey) {
@@ -194,6 +194,89 @@ async function chat(ctx: any, messages: any[], opts: ChatOpts): Promise<string> 
   const content = data?.choices?.[0]?.message?.content;
   if (!isStr(content)) throw httpError(502, "AI gateway returned empty content");
   return content;
+}
+
+/* ------------------------------------------------------------------ */
+/* Direct Anthropic fallback (used when the Butterbase gateway fails,  */
+/* e.g. the platform-wide upstream quota outage on demo day).          */
+/* ------------------------------------------------------------------ */
+
+/** Convert one OpenAI-style content part to an Anthropic content block. */
+function toAnthropicBlock(part: any): any {
+  if (typeof part === "string") return { type: "text", text: part };
+  if (part?.type === "text") return { type: "text", text: part.text };
+  // Data-URI carriers used by the PDF extraction attempts.
+  const dataUri: string | undefined =
+    part?.type === "file" ? part.file?.file_data :
+    part?.type === "image_url" ? part.image_url?.url : undefined;
+  if (isStr(dataUri) && dataUri.startsWith("data:")) {
+    const [, meta, data] = dataUri.match(/^data:([^;]+);base64,(.*)$/s) ?? [];
+    if (!isStr(data)) throw httpError(400, "Unsupported data URI in content");
+    if (meta === "application/pdf") {
+      return { type: "document", source: { type: "base64", media_type: "application/pdf", data } };
+    }
+    return { type: "image", source: { type: "base64", media_type: meta, data } };
+  }
+  throw httpError(400, `Unsupported content part for Anthropic fallback: ${part?.type}`);
+}
+
+async function anthropicChat(ctx: any, messages: any[], opts: ChatOpts): Promise<string> {
+  const apiKey = ctx.env.ANTHROPIC_API_KEY;
+  if (!isStr(apiKey)) throw httpError(502, "AI gateway failed and no ANTHROPIC_API_KEY fallback is configured");
+
+  const system = messages
+    .filter((m) => m.role === "system")
+    .map((m) => (typeof m.content === "string" ? m.content : ""))
+    .join("\n\n");
+  const converted = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({
+      role: m.role,
+      content: Array.isArray(m.content)
+        ? m.content.map(toAnthropicBlock)
+        : [{ type: "text", text: String(m.content) }],
+    }));
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      // Matches the model family the team standardized on for this app
+      // (CORTEX_REASONING_MODEL=claude-haiku-4-5 in the dev config).
+      model: ctx.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
+      max_tokens: opts.maxTokens,
+      temperature: opts.temperature ?? 0.2,
+      ...(system ? { system } : {}),
+      messages: converted,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw httpError(res.status >= 500 ? 502 : res.status, `Anthropic ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  if (data?.stop_reason === "refusal") throw httpError(502, "Anthropic fallback refused the request");
+  const text = (data?.content ?? [])
+    .filter((b: any) => b?.type === "text" && isStr(b.text))
+    .map((b: any) => b.text)
+    .join("");
+  if (!isStr(text)) throw httpError(502, "Anthropic fallback returned empty content");
+  return text;
+}
+
+/** Gateway first; direct Anthropic when the gateway is down or over quota. */
+async function chat(ctx: any, messages: any[], opts: ChatOpts): Promise<string> {
+  try {
+    return await gatewayChat(ctx, messages, opts);
+  } catch (err: any) {
+    if (!isStr(ctx.env.ANTHROPIC_API_KEY)) throw err;
+    console.warn(`chat: gateway failed (${err?.message ?? err}); falling back to Anthropic`);
+    return await anthropicChat(ctx, messages, opts);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -818,6 +901,103 @@ async function evaluateStudentQuestion(ctx: any, input: any): Promise<Response> 
 }
 
 /* ------------------------------------------------------------------ */
+/* Route: concept-brief                                                */
+/* ------------------------------------------------------------------ */
+
+function normalizeStringList(value: unknown, max: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => cleanString(v))
+    .filter((v) => v.length > 0)
+    .slice(0, max);
+}
+
+// Per-isolate cache only (isolates don't share memory, but repeat opens of
+// the same concept chat within one warm isolate skip the LLM round-trip).
+const conceptBriefCache = new Map<string, unknown>();
+
+function conceptBriefPrompt(args: {
+  label: string;
+  courseTitle: string;
+  subject: string;
+  problemTitles: string[];
+  problemStatements: string[];
+}): string {
+  return `Create a grounded concept brief for a student knowledge-graph node.
+
+Concept: ${args.label}
+Course: ${args.courseTitle}
+Subject: ${args.subject}
+Homework titles: ${args.problemTitles.join("; ") || "none provided"}
+Homework prompts: ${args.problemStatements.join("\n---\n") || "none provided"}
+
+Rules:
+- Explain the concept in language appropriate for the supplied homework.
+- Connect key ideas to the actual assignments without solving them outright.
+- Identify likely misconceptions that are supported by the course context.
+- Do not invent citations, lecture titles, or claims not supported by the supplied context.
+- Keep the overview under 120 words and each list item concise.
+- End with one active-recall study prompt.
+
+Return ONLY a JSON object: {"title": string, "overview": string, "keyIdeas": string[] (max 5), "commonMisconceptions": string[] (max 4), "studyPrompt": string}. No markdown fences, no commentary.`;
+}
+
+async function createConceptBrief(ctx: any, input: any): Promise<Response> {
+  const conceptId = cleanId(input?.conceptId) || "concept";
+  const label = cleanString(input?.label) || conceptId;
+  const courseTitle = cleanString(input?.courseTitle) || "this course";
+  const subject = cleanString(input?.subject) || courseTitle;
+  const problemTitles = normalizeStringList(input?.problemTitles, 12);
+  const problemStatements = normalizeStringList(input?.problemStatements, 8).map(
+    (statement) => statement.slice(0, 700),
+  );
+
+  const cacheKey = `${courseTitle}:${conceptId}:${label}`.toLowerCase();
+  const cached = conceptBriefCache.get(cacheKey);
+  if (cached) return json(200, cached);
+
+  const raw = await chat(
+    ctx,
+    [
+      {
+        role: "system",
+        content:
+          "You create concise, student-friendly concept briefs grounded in the learner's actual coursework. Respond with strict JSON only.",
+      },
+      {
+        role: "user",
+        content: conceptBriefPrompt({
+          label,
+          courseTitle,
+          subject,
+          problemTitles,
+          problemStatements,
+        }),
+      },
+    ],
+    { model: ctx.env.MODEL || DEFAULT_REASONING_MODEL, maxTokens: 1200, temperature: 0.2 },
+  );
+  const generated = extractJson(raw);
+
+  const brief = {
+    conceptId,
+    title: cleanString(generated?.title) || label,
+    overview:
+      cleanString(generated?.overview) || `${label} is part of ${courseTitle}.`,
+    keyIdeas: normalizeStringList(generated?.keyIdeas, 5),
+    commonMisconceptions: normalizeStringList(generated?.commonMisconceptions, 4),
+    studyPrompt:
+      cleanString(generated?.studyPrompt) ||
+      `Explain ${label} using one of your homework problems.`,
+    // Tavily grounding is dev-server-only; the deployed brief is model-only.
+    sources: [],
+    grounding: "model_only",
+  };
+  conceptBriefCache.set(cacheKey, brief);
+  return json(200, brief);
+}
+
+/* ------------------------------------------------------------------ */
 /* Route: sessions                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -848,6 +1028,7 @@ const RATE_LIMITED_ROUTES = new Set([
   "/api/analyze",
   "/api/evaluate-question",
   "/api/homeworks/import-pdf",
+  "/api/concept-brief",
 ]);
 
 export default async function handler(req: Request, ctx: any): Promise<Response> {
@@ -883,6 +1064,9 @@ export default async function handler(req: Request, ctx: any): Promise<Response>
     }
     if (req.method === "POST" && route === "/api/evaluate-question") {
       return await evaluateStudentQuestion(ctx, await req.json().catch(() => ({})));
+    }
+    if (req.method === "POST" && route === "/api/concept-brief") {
+      return await createConceptBrief(ctx, await req.json().catch(() => ({})));
     }
     if (req.method === "POST" && route === "/api/sessions") {
       return await recordSession(ctx, await req.json().catch(() => ({})));

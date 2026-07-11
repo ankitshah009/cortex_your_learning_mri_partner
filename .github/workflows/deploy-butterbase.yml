@@ -33,6 +33,10 @@ jobs:
     env:
       BUTTERBASE_API_KEY: ${{ secrets.BUTTERBASE_API_KEY }}
       AI_GATEWAY_KEY: ${{ secrets.BUTTERBASE_AI_GATEWAY_KEY }}
+      # Optional: direct-Anthropic fallback for when the Butterbase AI gateway
+      # is down or over quota. Deploys overwrite function env, so this must
+      # ride along or a redeploy silently strips the fallback.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       APP_ID: ${{ vars.BUTTERBASE_APP_ID }}
     steps:
       - uses: actions/checkout@v4
@@ -51,13 +55,15 @@ jobs:
           app_id = os.environ["APP_ID"]
           key = os.environ["BUTTERBASE_API_KEY"]
           ai_key = os.environ["AI_GATEWAY_KEY"]
+          anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+          fallback_env = {"ANTHROPIC_API_KEY": anthropic_key} if anthropic_key else {}
           functions = [
               {
                   "name": "analyze",
                   "description": "Cortex reasoning diagnostic: problem + reasoning in, kid-friendly Diagnosis JSON out",
                   "code": open("functions/analyze/index.ts").read(),
                   "timeoutMs": 60000,
-                  "envVars": {"AI_GATEWAY_KEY": ai_key, "MODEL": "anthropic/claude-haiku-4.5"},
+                  "envVars": {"AI_GATEWAY_KEY": ai_key, "MODEL": "anthropic/claude-haiku-4.5", **fallback_env},
                   "trigger": {"type": "http", "config": {"method": "POST", "auth": "none"}},
               },
               {
@@ -70,6 +76,7 @@ jobs:
                       "AI_GATEWAY_KEY": ai_key,
                       "MODEL": "anthropic/claude-haiku-4.5",
                       "EXTRACTION_MODEL": "anthropic/claude-haiku-4.5",
+                      **fallback_env,
                   },
                   # No method restriction: the router serves GET and POST.
                   "trigger": {"type": "http", "config": {"auth": "none"}},
