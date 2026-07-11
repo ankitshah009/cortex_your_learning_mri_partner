@@ -78,6 +78,8 @@ export const meetDiagnosis: Diagnosis = {
       "step-answer": "They meet after 20 seconds ✓",
     },
   },
+  repairPrompt:
+    "Explain why both Ben's and Ali's speeds must count when you find how quickly the gap closes.",
   celebration: {
     headline: "Another mix-up squashed!",
     sub: "You found the Solo-Walker Mix-up and repaired it. Speed Springs is getting even stronger!",

@@ -14,6 +14,7 @@ interface AppState {
   completedProblems: Completions;
   /** problemId -> accumulated understanding evidence */
   understandingByProblem: Record<string, UnderstandingState>;
+  resetLearningProgress: () => void;
   setProfile: (p: Profile) => void;
   markCompleted: (problemId: string, outcome: Outcome) => void;
   addUnderstandingSignal: (
@@ -24,6 +25,8 @@ interface AppState {
 
 export interface UnderstandingState {
   score: number;
+  /** Score when this problem first entered the recorded learning loop. */
+  baselineScore?: number;
   signals: UnderstandingSignal[];
 }
 
@@ -38,6 +41,8 @@ export const useApp = create<AppState>()(
       profile: null,
       completedProblems: {},
       understandingByProblem: {},
+      resetLearningProgress: () =>
+        set({ completedProblems: {}, understandingByProblem: {} }),
       setProfile: (profile) => set({ profile }),
       markCompleted: (problemId, outcome) =>
         set((s) => ({
@@ -70,6 +75,7 @@ export const useApp = create<AppState>()(
               ...s.understandingByProblem,
               [problemId]: {
                 score: clampScore(current.score + delta),
+                baselineScore: current.baselineScore ?? current.score,
                 signals: [...current.signals, fullSignal].slice(-12),
               },
             },

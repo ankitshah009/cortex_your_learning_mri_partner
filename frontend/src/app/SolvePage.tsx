@@ -14,7 +14,6 @@ import { ChunkyButton } from "../components/ui/ChunkyButton";
 import { ProblemCard, StageCard } from "../components/panels/StageRail";
 import { coraLine, coraExpression } from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
-import { UNDERSTANDING_MASTERY_THRESHOLD } from "../learning/understanding";
 
 /** Remounts the scan for every problem so all state starts fresh */
 export function SolvePage() {
@@ -28,9 +27,6 @@ function SolveScan({ problemId }: { problemId: string }) {
   const markCompleted = useApp((s) => s.markCompleted);
   const addUnderstandingSignal = useApp((s) => s.addUnderstandingSignal);
   const { library } = useHomeworkLibrary();
-  const understandingScore = useApp(
-    (s) => s.understandingByProblem[problemId]?.score ?? 0,
-  );
   const [problem, setProblem] = useState<Problem | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [diagnosis, setDiagnosis] = useState<Diagnosis | null>(null);
@@ -92,11 +88,7 @@ function SolveScan({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
-    if (
-      stage === "celebrated" &&
-      understandingScore >= UNDERSTANDING_MASTERY_THRESHOLD &&
-      !celebratedRef.current
-    ) {
+    if (stage === "celebrated" && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
       markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
@@ -124,7 +116,6 @@ function SolveScan({ problemId }: { problemId: string }) {
     diagnosis,
     markCompleted,
     addUnderstandingSignal,
-    understandingScore,
   ]);
 
   // Presenter keys: arrows drive the demo, r restarts

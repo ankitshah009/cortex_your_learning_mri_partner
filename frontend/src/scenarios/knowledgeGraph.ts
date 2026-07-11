@@ -50,15 +50,17 @@ interface ConceptAccumulator {
   completed: number;
   repaired: number;
   understandingTotal: number;
+  baselineTotal: number;
   practicedCount: number;
+  evidenceCount: number;
   lastPracticedAt: string | null;
 }
 
 /**
  * Derive the knowledge graph for one course. This is the personalization
  * substrate: nodes are the distinct concepts the course touches, edges connect
- * concepts that co-occur in the course's problems ("everything in the same
- * course is connected"), and both grow as the student completes work.
+ * concepts that genuinely co-occur within a problem, and both grow as the
+ * student completes work.
  */
 export function buildCourseGraph(
   course: Course,
@@ -78,49 +80,66 @@ export function buildCourseGraph(
   for (const pid of problemIds) {
     const problem = library.problems[pid];
     if (!problem) continue;
-    const conceptId = problem.conceptId || "math";
+    const problemConcepts = [
+      problem.conceptId || "math",
+      ...(problem.relatedConceptIds ?? []),
+    ].filter((id, index, ids) => id && ids.indexOf(id) === index);
 
-    const acc = concepts.get(conceptId) ?? {
-      problemIds: [],
-      completed: 0,
-      repaired: 0,
-      understandingTotal: 0,
-      practicedCount: 0,
-      lastPracticedAt: null,
-    };
-    acc.problemIds.push(pid);
-    const outcome = completed[pid];
-    if (outcome) acc.completed += 1;
-    if (outcome === "repaired") acc.repaired += 1;
+    for (const conceptId of problemConcepts) {
+      const acc = concepts.get(conceptId) ?? {
+        problemIds: [],
+        completed: 0,
+        repaired: 0,
+        understandingTotal: 0,
+        baselineTotal: 0,
+        practicedCount: 0,
+        evidenceCount: 0,
+        lastPracticedAt: null,
+      };
+      acc.problemIds.push(pid);
+      const outcome = completed[pid];
+      if (outcome) acc.completed += 1;
+      if (outcome === "repaired") acc.repaired += 1;
 
-    const understanding = understandingByProblem[pid];
-    if (understanding) {
-      acc.understandingTotal += understanding.score;
-      acc.practicedCount += 1;
-      const lastSignal = understanding.signals.at(-1);
-      if (
-        lastSignal &&
-        (!acc.lastPracticedAt || lastSignal.createdAt > acc.lastPracticedAt)
-      ) {
-        acc.lastPracticedAt = lastSignal.createdAt;
+      const understanding = understandingByProblem[pid];
+      if (understanding) {
+        acc.understandingTotal += understanding.score;
+        const inferredBaseline = Math.max(
+          0,
+          understanding.score -
+            understanding.signals.reduce((sum, signal) => sum + signal.delta, 0),
+        );
+        acc.baselineTotal +=
+          understanding.baselineScore ?? inferredBaseline;
+        acc.practicedCount += 1;
+        acc.evidenceCount += understanding.signals.length;
+        const lastSignal = understanding.signals.at(-1);
+        if (
+          lastSignal &&
+          (!acc.lastPracticedAt || lastSignal.createdAt > acc.lastPracticedAt)
+        ) {
+          acc.lastPracticedAt = lastSignal.createdAt;
+        }
+      } else if (outcome) {
+        // Older persisted completions did not have understanding signals yet.
+        acc.understandingTotal += 100;
+        acc.practicedCount += 1;
       }
-    } else if (outcome) {
-      // Older persisted completions did not have understanding signals yet.
-      acc.understandingTotal += 100;
-      acc.practicedCount += 1;
+      concepts.set(conceptId, acc);
     }
-    concepts.set(conceptId, acc);
+
+    // Only connect concepts that actually co-occur in a problem. This keeps
+    // mixed-topic PDFs from producing an indiscriminate fully-connected graph.
+    for (let i = 0; i < problemConcepts.length; i++) {
+      for (let j = i + 1; j < problemConcepts.length; j++) {
+        const pair = [problemConcepts[i], problemConcepts[j]].sort();
+        const key = `${pair[0]}__${pair[1]}`;
+        coOccurrence.set(key, (coOccurrence.get(key) ?? 0) + 1);
+      }
+    }
   }
 
-  // Every pair of concepts that appear in the same course is linked. Edges
-  // between two well-practiced concepts are the strongest synapses.
   const conceptIds = [...concepts.keys()];
-  for (let i = 0; i < conceptIds.length; i++) {
-    for (let j = i + 1; j < conceptIds.length; j++) {
-      const key = `${conceptIds[i]}__${conceptIds[j]}`;
-      coOccurrence.set(key, (coOccurrence.get(key) ?? 0) + 1);
-    }
-  }
 
   const nodes: ConceptNode[] = conceptIds.map((id) => {
     const acc = concepts.get(id)!;
@@ -129,6 +148,9 @@ export function buildCourseGraph(
     const evidenceRatio = acc.practicedCount
       ? acc.understandingTotal / (acc.practicedCount * 100)
       : ratio;
+    const baselineEvidenceRatio = acc.practicedCount
+      ? acc.baselineTotal / (acc.practicedCount * 100)
+      : 0;
     const recency = recencyWeight(acc.lastPracticedAt);
     const mastery = Math.min(
       0.95,
@@ -140,11 +162,14 @@ export function buildCourseGraph(
       label: meta.label,
       emoji: meta.emoji,
       mastery,
+      baselineMastery: Math.min(0.95, 0.2 + baselineEvidenceRatio * 0.7),
       wobbly:
         total > 0 &&
         (acc.completed < total ||
           evidenceRatio * 100 < UNDERSTANDING_MASTERY_THRESHOLD),
       problemCount: total,
+      problemIds: [...new Set(acc.problemIds)],
+      evidenceCount: acc.evidenceCount,
       lastPracticedAt: acc.lastPracticedAt,
       retention: recency,
     };
@@ -153,12 +178,12 @@ export function buildCourseGraph(
   const masteryOf = (id: string) =>
     nodes.find((n) => n.id === id)?.mastery ?? 0;
 
-  const edges: ConceptEdge[] = [...coOccurrence.keys()].map((key) => {
+  const edges: ConceptEdge[] = [...coOccurrence.entries()].map(([key, shared]) => {
     const [source, target] = key.split("__");
     // A synapse lights up once both concepts it links are being learned.
     const strength = Math.min(
       1,
-      0.3 + (masteryOf(source) + masteryOf(target)) / 2,
+      0.2 + shared * 0.1 + (masteryOf(source) + masteryOf(target)) / 2,
     );
     return { source, target, strength };
   });

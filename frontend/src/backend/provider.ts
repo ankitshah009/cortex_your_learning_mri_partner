@@ -1,11 +1,14 @@
 import type {
   Course,
+  ConceptBrief,
+  ConceptBriefInput,
   CreateCourseInput,
   Diagnosis,
   Homework,
   HomeworkImportResult,
   HomeworkLibrary,
   Problem,
+  RepairConversationTurn,
   UnderstandingEvaluation,
   UnderstandingTurnMode,
 } from "../scenarios/types";
@@ -25,6 +28,8 @@ export interface DataProvider {
   /** Homework assigned to this student */
   listHomeworks(): Promise<Homework[]>;
   getProblem(problemId: string): Promise<Problem>;
+  /** Tavily-grounded, model-synthesized background for a graph concept. */
+  getConceptBrief(input: ConceptBriefInput): Promise<ConceptBrief>;
   /**
    * Upload a worksheet PDF and extract real questions into renderable problems.
    * The homework is filed into `courseId` (or the default course when omitted).
@@ -35,14 +40,16 @@ export interface DataProvider {
   ): Promise<HomeworkImportResult>;
   /** Observe + Map + Detect + Hypothesize: reasoning text in, diagnosis out */
   analyzeReasoning(problemId: string, reasoning: string): Promise<Diagnosis>;
-  /** Evaluate a student's question as evidence of understanding */
+  /** Evaluate one ordered tutoring turn and decide the next conversation action */
   evaluateStudentQuestion(input: {
     problem: Problem;
-    diagnosis: Diagnosis;
+    /** Absent for concept-chat turns, which have no reasoning scan behind them */
+    diagnosis?: Diagnosis;
     question: string;
     currentUnderstanding: number;
     mode?: UnderstandingTurnMode;
     prompt?: string;
+    conversation?: RepairConversationTurn[];
   }): Promise<UnderstandingEvaluation>;
   /** EverOS: record the repaired session so the brain map grows */
   recordLearningSession(

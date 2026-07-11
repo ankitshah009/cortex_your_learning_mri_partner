@@ -103,27 +103,6 @@ export function HomePage() {
             ))}
           </div>
         )}
-
-        {/* General path: prove the scanner works on ANY problem, not a script */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="mt-3 flex items-center gap-5 rounded-3xl border-[3px] border-dashed border-lav/50 bg-lav-soft p-5"
-        >
-          <span className="text-4xl">✏️</span>
-          <div className="min-w-0 flex-1">
-            <p className="font-display text-lg font-extrabold">
-              Bring your own problem
-            </p>
-            <p className="text-sm font-semibold text-ink-soft">
-              Type any problem and Cora will scan your real thinking.
-            </p>
-          </div>
-          <Link to="/custom" className="shrink-0">
-            <ChunkyButton variant="lav">Try it ✨</ChunkyButton>
-          </Link>
-        </motion.div>
       </section>
 
       <div className="pointer-events-none mt-10 flex items-end gap-2">

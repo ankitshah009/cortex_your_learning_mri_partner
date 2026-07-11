@@ -1,6 +1,6 @@
 import { Suspense, useState, type ChangeEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useApp } from "../state/store";
 import {
   homeworkProgress,
@@ -17,11 +17,16 @@ import { BrainGraph } from "../components/brain-3d/LazyBrainGraph";
 import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
+import { ConceptChat } from "../components/concept-chat/ConceptChat";
 
 export function CoursePage() {
   const { courseId } = useParams<{ courseId: string }>();
   const completed = useApp((s) => s.completedProblems);
   const understanding = useApp((s) => s.understandingByProblem);
+  const resetLearningProgress = useApp((s) => s.resetLearningProgress);
+  const [brainView, setBrainView] = useState<"before" | "now">("now");
+  const [selectedConceptId, setSelectedConceptId] = useState<string | null>(null);
+  const [resetArmed, setResetArmed] = useState(false);
   const { library, loading, refresh } = useHomeworkLibrary();
   const course = courseId ? getCourse(courseId, library) : undefined;
 
@@ -51,21 +56,59 @@ export function CoursePage() {
 
   const homeworks = homeworksInCourse(course.id, library);
   const graph = buildCourseGraph(course, library, completed, understanding);
+  const displayedGraph =
+    brainView === "before"
+      ? {
+          ...graph,
+          nodes: graph.nodes.map((node) => ({
+            ...node,
+            mastery: node.baselineMastery,
+            wobbly: true,
+          })),
+        }
+      : graph;
   const { done, total } = courseProgress(course, library, completed);
   const strongConcepts = graph.nodes.filter((n) => !n.wobbly).length;
+  const selectedConcept = graph.nodes.find(
+    (node) => node.id === selectedConceptId,
+  );
+
+  function openConcept(conceptId: string) {
+    setSelectedConceptId(conceptId);
+  }
+
+  function resetForTesting() {
+    if (!resetArmed) {
+      setResetArmed(true);
+      return;
+    }
+    resetLearningProgress();
+    setBrainView("before");
+    setResetArmed(false);
+    setSelectedConceptId(null);
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-3">
         <Link
           to="/"
           className="font-display text-lg font-extrabold text-ink-soft transition-colors hover:text-ink"
         >
           ← My courses
         </Link>
-        <span className="rounded-full border-[3px] border-ink/10 bg-white px-4 py-1.5 font-display text-sm font-extrabold text-ink-soft">
-          {course.subject}
-        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={resetForTesting}
+            className="rounded-full border-2 border-coral/30 bg-coral-soft px-3 py-1.5 font-display text-xs font-extrabold text-coral-dark transition-transform hover:scale-[1.02] active:translate-y-px"
+          >
+            {resetArmed ? "Click again to reset" : "Reset test progress"}
+          </button>
+          <span className="rounded-full border-[3px] border-ink/10 bg-white px-4 py-1.5 font-display text-sm font-extrabold text-ink-soft">
+            {course.subject}
+          </span>
+        </div>
       </header>
 
       <motion.div
@@ -87,14 +130,16 @@ export function CoursePage() {
       <div className="relative mt-6">
         <Suspense
           fallback={
-            <div className="h-[420px] rounded-3xl border-[3px] border-ink/10 bg-gradient-to-b from-[#f3eefe] to-[#eaf6ff]" />
+            <div className="h-[480px] rounded-3xl border-[3px] border-ink/10 bg-gradient-to-b from-[#f3eefe] to-[#eaf6ff]" />
           }
         >
           <BrainGraph
-            graph={graph}
+            graph={displayedGraph}
             color={course.color}
             interactive
-            className="h-[420px]"
+            className="h-[480px]"
+            activeId={selectedConceptId}
+            onNodeSelect={openConcept}
           />
         </Suspense>
         <div className="pointer-events-none absolute left-4 top-4 flex flex-wrap gap-2">
@@ -102,9 +147,49 @@ export function CoursePage() {
           <Badge>{graph.edges.length} connections ✨</Badge>
           <Badge>{strongConcepts} strong 💪</Badge>
         </div>
-        <p className="pointer-events-none absolute bottom-3 right-4 rounded-full bg-white/80 px-3 py-1 font-display text-xs font-extrabold text-ink-soft">
-          drag to spin · scroll to zoom
-        </p>
+        <div className="absolute right-4 top-4 flex rounded-full border-2 border-ink/10 bg-white/90 p-1 font-display text-xs font-extrabold shadow-[0_3px_0_rgba(63,46,86,0.08)]">
+          {(["before", "now"] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              onClick={() => setBrainView(view)}
+              className={`rounded-full px-3 py-1.5 transition-colors ${
+                brainView === view
+                  ? "bg-ink text-white"
+                  : "text-ink-soft hover:text-ink"
+              }`}
+            >
+              {view === "before" ? "Before" : "Now"}
+            </button>
+          ))}
+        </div>
+        {!selectedConcept && (
+          <p className="pointer-events-none absolute bottom-3 right-4 rounded-full bg-white/80 px-3 py-1 font-display text-xs font-extrabold text-ink-soft">
+            click a neuron to chat · drag to spin · scroll to zoom
+          </p>
+        )}
+
+        {/* The concept chat floats over the brain so the activated neuron
+            stays visible — answer well and it fires right behind the window. */}
+        <AnimatePresence>
+          {selectedConcept && (
+            <motion.div
+              key={selectedConcept.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, x: 24, scale: 0.97 }}
+              transition={{ duration: 0.18 }}
+              className="absolute inset-y-3 right-3 w-[min(380px,calc(100%-24px))]"
+            >
+              <ConceptChat
+                node={selectedConcept}
+                course={course}
+                library={library}
+                onClose={() => setSelectedConceptId(null)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Homework in this course + scoped upload */}
