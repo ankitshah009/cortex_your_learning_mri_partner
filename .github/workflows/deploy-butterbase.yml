@@ -142,6 +142,9 @@ jobs:
         working-directory: frontend
         env:
           VITE_ANALYZE_URL: https://api.butterbase.ai/v1/${{ vars.BUTTERBASE_APP_ID }}/fn/analyze
+          # Plain function URL: live.ts appends ?path=<route> itself (Butterbase
+          # functions only resolve at exactly /fn/api; the deployed router reads
+          # the logical route from the ?path= query parameter).
           VITE_CORTEX_API_URL: https://api.butterbase.ai/v1/${{ vars.BUTTERBASE_APP_ID }}/fn/api
         run: |
           npm ci
