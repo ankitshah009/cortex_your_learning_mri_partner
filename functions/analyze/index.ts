@@ -285,6 +285,37 @@ const CORS_HEADERS = {
   "Content-Type": "application/json",
 };
 
+/*
+ * Simple per-IP rate limiter (~30 req/min). Function invocations do not
+ * share isolate memory on this platform, so the counter lives in the app
+ * database (cortex_rate_limits) — one upsert per request, shared across
+ * every instance. Fails open if the counter query errors.
+ */
+const RATE_LIMIT = 30;
+
+async function rateLimited(req: Request, ctx: any): Promise<boolean> {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    req.headers.get("cf-connecting-ip") ||
+    "unknown";
+  try {
+    const result = await ctx.db.query(
+      `INSERT INTO cortex_rate_limits (key, count, reset_at)
+       VALUES ($1, 1, now() + interval '60 seconds')
+       ON CONFLICT (key) DO UPDATE SET
+         count = CASE WHEN now() >= cortex_rate_limits.reset_at THEN 1 ELSE cortex_rate_limits.count + 1 END,
+         reset_at = CASE WHEN now() >= cortex_rate_limits.reset_at THEN now() + interval '60 seconds' ELSE cortex_rate_limits.reset_at END
+       RETURNING count`,
+      [`analyze:${ip}`],
+    );
+    return Number(result.rows?.[0]?.count ?? 0) > RATE_LIMIT;
+  } catch (e: any) {
+    console.warn("analyze: rate limit check failed open:", e?.message ?? e);
+    return false;
+  }
+}
+
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: CORS_HEADERS });
 }
@@ -295,6 +326,12 @@ export default async function handler(req: Request, ctx: any): Promise<Response>
   }
   if (req.method !== "POST") {
     return json(405, { error: "POST only" });
+  }
+  if (await rateLimited(req, ctx)) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please slow down and try again in a minute." }),
+      { status: 429, headers: { ...CORS_HEADERS, "Retry-After": "60" } },
+    );
   }
 
   let problemId = "";

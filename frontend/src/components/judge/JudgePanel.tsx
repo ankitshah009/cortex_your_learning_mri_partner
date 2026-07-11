@@ -1,4 +1,5 @@
 import type { Diagnosis, ReasoningStep } from "../../scenarios/types";
+import type { LiveDiagnosis } from "../../backend/live";
 import { useJudgeCapture, type JudgeCapture } from "./judgeStore";
 import { useJudgeToggle } from "./useJudgeToggle";
 
@@ -97,8 +98,22 @@ function JudgePanel({
         }}
       >
         <div>
-          <div style={{ color: palette.cyan, fontWeight: 700, fontSize: 13 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: palette.cyan,
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
             CORTEX // DIAGNOSTIC ENGINE
+            {capture && (
+              <SourceBadge
+                source={(capture.diagnosis as LiveDiagnosis).source}
+              />
+            )}
           </div>
           <div style={{ color: palette.dim, fontSize: 11 }}>
             live Diagnosis object — same data as the kids UI
@@ -137,6 +152,35 @@ function JudgePanel({
         [J] toggle · [ESC] close
       </footer>
     </aside>
+  );
+}
+
+/**
+ * Provenance badge: is this diagnosis real live engine output, a seeded
+ * fallback after a live failure, or seeded-only (no endpoint configured)?
+ */
+function SourceBadge({ source }: { source: LiveDiagnosis["source"] }) {
+  const s =
+    source === "live"
+      ? { text: "LIVE", color: palette.green }
+      : source === "seeded-fallback"
+        ? { text: "SEEDED FALLBACK", color: palette.amber }
+        : { text: "SEEDED (no live endpoint)", color: palette.dim };
+  return (
+    <span
+      style={{
+        padding: "1px 7px",
+        borderRadius: 4,
+        border: `1px solid ${s.color}`,
+        color: s.color,
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: "0.06em",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {s.text}
+    </span>
   );
 }
 
@@ -401,7 +445,8 @@ function Trace({ diagnosis }: { diagnosis: Diagnosis }) {
 }
 
 function ConfidenceBar({ label, value }: { label: string; value: number }) {
-  const pct = Math.round(value * 100);
+  // Confidence values are already on a 0-100 scale (e.g. 68 -> "68%").
+  const pct = Math.max(0, Math.min(100, Math.round(value)));
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
       <span style={{ color: palette.dim, width: 76, fontSize: 11, flexShrink: 0 }}>

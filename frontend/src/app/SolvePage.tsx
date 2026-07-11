@@ -12,7 +12,11 @@ import { Cora } from "../components/mascot/Cora";
 import { SpeechBubble } from "../components/mascot/SpeechBubble";
 import { ChunkyButton } from "../components/ui/ChunkyButton";
 import { ProblemCard, StageCard } from "../components/panels/StageRail";
-import { coraLine, coraExpression } from "../lib/coraScript";
+import {
+  coraLine,
+  coraExpression,
+  READING_WAIT_LINES,
+} from "../lib/coraScript";
 import { miniBurst, bigCelebration } from "../components/celebrate/confetti";
 import { UNDERSTANDING_MASTERY_THRESHOLD } from "../learning/understanding";
 
@@ -92,11 +96,14 @@ function SolveScan({ problemId }: { problemId: string }) {
   useEffect(() => {
     if (!problem || !diagnosis) return;
     if (stage === "confirmed" && probeOutcome !== "correct") miniBurst();
-    if (
-      stage === "celebrated" &&
-      understandingScore >= UNDERSTANDING_MASTERY_THRESHOLD &&
-      !celebratedRef.current
-    ) {
+    // A solid diagnosis (no mix-up) skips the whole diagnosis arc, so the
+    // understanding score can't reach the mastery threshold on this scan —
+    // solid reasoning alone earns completion. The mixup path still requires
+    // mastery, which RepairLab provides the route to.
+    const masteryReached =
+      diagnosis.mixup === null ||
+      understandingScore >= UNDERSTANDING_MASTERY_THRESHOLD;
+    if (stage === "celebrated" && masteryReached && !celebratedRef.current) {
       celebratedRef.current = true;
       bigCelebration();
       markCompleted(problem.id, diagnosis.mixup ? "repaired" : "solid");
@@ -306,6 +313,17 @@ function IntroLayout({
 }
 
 function ReadingOverlay() {
+  // Live analysis can take up to ~45s; step through progressively more
+  // reassuring copy so the wait never feels stuck. Text swaps aren't
+  // animated (so nothing new to gate on prefers-reduced-motion); the
+  // existing pulse on the line is kept as-is.
+  const [lineIndex, setLineIndex] = useState(0);
+  useEffect(() => {
+    const timers = READING_WAIT_LINES.filter((l) => l.afterMs > 0).map(
+      (line, i) => setTimeout(() => setLineIndex(i + 1), line.afterMs),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, []);
   return (
     <div className="flex h-full items-center justify-center">
       <div className="flex flex-col items-center">
@@ -315,7 +333,7 @@ function ReadingOverlay() {
           transition={{ duration: 1.4, repeat: Infinity }}
           className="mt-4 font-display text-xl font-extrabold text-ink-soft"
         >
-          Cora is reading your thinking...
+          {READING_WAIT_LINES[lineIndex].text}
         </motion.p>
       </div>
     </div>

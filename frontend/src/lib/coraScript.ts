@@ -28,6 +28,27 @@ export function coraExpression(stage: Stage): Expression {
   }
 }
 
+/**
+ * Progressive wait copy while Cora analyzes reasoning. Live analysis can
+ * take up to ~45s (validation-retry path), so the overlay steps through
+ * these lines as time passes instead of pulsing one line forever.
+ */
+export const READING_WAIT_LINES: readonly {
+  afterMs: number;
+  text: string;
+}[] = [
+  { afterMs: 0, text: "Cora is reading your thinking..." },
+  {
+    afterMs: 8000,
+    text: "Hmm, this is interesting thinking! Looking closer... 🔍",
+  },
+  {
+    afterMs: 20000,
+    text: "Cora is thinking extra hard about your reasoning... 🧠",
+  },
+  { afterMs: 35000, text: "Almost there! Double-checking every step..." },
+];
+
 export function coraLine(
   stage: Stage,
   probeOutcome: ProbeOutcome,

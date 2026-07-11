@@ -7,7 +7,9 @@
     "api": "node scripts/cortex-api.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
@@ -27,12 +29,15 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.10",
+    "@testing-library/react": "^16.3.2",
     "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.5.2",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4.1.10",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.7"
   }
 }
